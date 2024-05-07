@@ -1,0 +1,9 @@
+# ignore all R Markdown files
+*.Rmd
+
+# ignore all data folders
+Data/
+Output/
+Figures/
+groundhog_library/
+renv/
