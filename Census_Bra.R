@@ -33,13 +33,15 @@ pkgs = c("here", "yaml", "dplyr", "tidyverse", "janitor", "sf"
          , "tmap", "devtools", "renv", "Hmisc", "ggplot2"
          , "xfun", "remotes", "sp", "spdep", "maptools"
          , "foreach", "doParallel", "parallel", "progress"
-         , "doSNOW", "purrr", "patchwork")
+         , "doSNOW", "purrr", "patchwork"
+         , "geobr"
+         )
 
 groundhog.library(pkgs
                   , groundhog.day
                   , #force.install=TRUE
-                 )
-   
+)
+
 ## Program Set-up ------------------------------------------------------------
 
 options(scipen = 100, digits = 4) # Prefer non-scientific notation
@@ -54,38 +56,10 @@ theme_set(theme_minimal())
 
 
 ## Import and clean data -------------------------------------------------------
-data <- st_read("data/Shape_Lima/ZONAS_CENSALES.shp") %>% 
-  st_transform(crs = 24892) #PSAD56 / Peru central zone
 
-# Simple feature collection with 1721 features and 13 fields
-# Geometry type: MULTIPOLYGON
-# Dimension:     XY
-# Bounding box:  xmin: 260700 ymin: 8618000 xmax: 318200 ymax: 8703000
-# Projected CRS: WGS 84 / UTM zone 18S
-
-# Checks if CRS is geographic or not
-st_crs(data)$IsGeographic 
-# [1] FALSE
-
-# Finds out the CRS units 
-st_crs(data)$units_gdal
-# [1] "metre"
-
-st_layers("data/LimaMet/EstratoLimaMetropolitanashp.shp")
-
-# data <- data[data$POB > 0,] #Remove rows with no population
-# data <- data[data$POB > 100,] #Remove rows with less than 100 population
-
-plot_census_zones <- function(data, title = "Census Zones") {
-  ggplot(data) +
-    # geom_sf(aes(fill = POB)) +
-    labs(title = title) +
-    theme_minimal()
-}
+# Available data sets
+datasets <- list_geobr()
 
 
 
-
-
-
-
+head(datasets)
