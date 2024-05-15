@@ -5,10 +5,18 @@ library("matrixStats")
 library("tidyverse")
 library("scales")
 
-groundhog.library(c("tidycensus", "stargazer", "lintr")
-                  , groundhog.day
-                  , #force.install=TRUE
+groundhog.library(c("tidycensus", "stargazer", "lintr"
+                    , "formatR")
+                   , groundhog.day
+                    # , ignore.deps = "Matrix"
+                    , force.install=TRUE
                 )
+
+groundhog.library(install_github("ROpenSci/Rclean")
+                  , groundhog.day
+                  # , ignore.deps = "Matrix"
+                  , force.install=TRUE
+)
 # library("BoundaryDetection")
 
 --------------------------------------------------------------
@@ -201,8 +209,9 @@ chi_ct <- bind_cols(chi_ct, select(chi_ct_blv, -i))
 
 # compare the boundary values for spatial lines (border line segments) with the 
 #boundary values for areal units.
-for spatial lines (border line segments) with the boundary values for areal units.
+#for spatial lines (border line segments) with the boundary values for areal units.
 par(mfrow=c(1,2), mar=c(0,0,0,0))
+
 # Plot 1: Boundary values for border line segments
 plot(bdr, lwd = rescale(bdr$p_race_black_blv, to = c(0.1, 1.25)))
 chi <- st_union(chi_ct)
@@ -227,5 +236,4 @@ f1 <- "crime_violent ~ edge_wombling_race + log(pop) + p_race_black + p_race_his
 p_race_asian + con_disadv + res_instab + immi_con + hhi + age_15_35_male"
 m1 <- glm.nb(f1, data = chi_ct)
 stargazer(m1, type = "text", no.space = TRUE, star.cutoffs = c(0.05, 0.01, 0.001))
-
 
