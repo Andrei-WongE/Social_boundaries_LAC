@@ -35,6 +35,7 @@ pkgs = c("here", "yaml", "dplyr", "tidyverse", "janitor", "sf"
          , "foreach", "doParallel", "parallel", "progress"
          , "doSNOW", "purrr", "patchwork"
          , "geobr", "crsuggest", "censobr", "arrow"
+         , "usethis"
          )
 
 groundhog.library(pkgs
@@ -117,26 +118,29 @@ plot(st_geometry(cntr_sp))
 
 # Using geobr together with censobr
 # only includes microdata from the 2000 and 2010 censuses!!!
-data_dictionary( year = 2020
+data_dictionary( year = 2010
                 , dataset = "households"
                 , showProgress = TRUE
                 , cache = TRUE
                )
 
-hs <- read_households(  year = 2020
-                      , howProgress = TRUE
+hs <- read_households(  year = 2010
+                      , columns = NULL #If NULL, it will return all columns
+                      , showProgress = TRUE
                       , as_data_frame = TRUE #If TRUE returns an Arrow Dataset
                       , cache = TRUE #If TRUE, it will save the data in a cache folder
                       )
 
 # merge data
-muni_sf$code_muni <- as.character(muni_sf$code_muni)
-esg_sf <- left_join(muni_sf, esg, by = 'code_muni')
+cntr_sp$code_muni <- as.character(cntr_sp$code_muni)
+hs$code_muni <- as.character(hs$code_muni)
+
+cntr_pop_sp <- left_join(cntr_sp, hs, by = 'code_muni')
 
 # plot map
 ggplot() +
   geom_sf(data = esg_sf, aes(fill = cobertura), color=NA) +
-  labs(title = "Share of households connected to a sewage network") +
+  labs(title = "Population") +
   scale_fill_distiller(palette = "Greens", direction = 1, 
                        name='Share of\nhouseholds', 
                        labels = scales::percent) +
