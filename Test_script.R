@@ -5,7 +5,7 @@ library("matrixStats")
 library("tidyverse")
 library("scales")
 
-groundhog.library(c("tidycensus", "stargazer", linter)
+groundhog.library(c("tidycensus", "stargazer", "lintr")
                   , groundhog.day
                   , #force.install=TRUE
                 )
