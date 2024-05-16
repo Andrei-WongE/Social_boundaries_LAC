@@ -204,6 +204,21 @@ sum(st_is_empty(chi_ct))
 # [1] 1
 chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
 
+
+#FUNCTION ERRORS!!!!!
+
+#[1]: error in evaluating the argument 'x' in selecting a method for function 
+#'addAttrToGeom': empty geometries are not supported by sp classes: conversion failed
+#'ORIGIN ERROR 1: sp do not support empty geometries
+#'SOLUTION ERROR 1: remove empty geometries
+#'LOCATION ERROR 1: function areal_wombling:25; function areal_wombling_bayesian:84;
+#'                function areal_wombling_bayesian:130
+#'
+#'[2]: `mutate_()` was deprecated in dplyr 0.7.0. Please use `mutate()` instead.
+#'ORIGIN ERROR 2: function deprecated
+#'SOLUTION ERROR 2: use mutate instead of mutate_
+#'LOCATION ERROR 2: function areal_wombling:49&51
+
 bdr <- areal_wombling(  chi_ct
                       , vars
                       , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling

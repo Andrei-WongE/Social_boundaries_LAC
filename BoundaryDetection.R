@@ -23,8 +23,10 @@ areal_wombling <- function(sp, x, threshold = NA
   # check `reshape2:::parse_formula` for p.white.cb + p.black.cb + p.hisp.cb + p.asian.cb ~ 1
   # Coerce simple feature geometries to corresponding Spatial* objects
   if (is(sp, "sf")) sp <- as(sp, "Spatial")
+  
   # get borders as line segments in SpatialLinesDataFrame
   sl <- border_lines(sp)
+  
   # boundary likelihood value (BLV) and boundary membership value (BMV) to data.frame
   dots_format <- function(s, suffix) {
     s %>%
@@ -32,18 +34,24 @@ areal_wombling <- function(sp, x, threshold = NA
       as.list() %>%
       lapply(FUN = as.formula, env = environment())
   }
-  dots_blv <- dots_format(sprintf("~ dist(sp@data[['%s']][c(i, j)])[1]", x), suffix = "_blv")
-  dots_bmv <- dots_format(sprintf("~ %s_blv/max(%s_blv, na.rm = TRUE)", x, x), suffix = "_bmv")
+  
+  dots_blv <- dots_format(sprintf("~ dist(sp@data[['%s']][c(i, j)])[1]", x)
+                          , suffix = "_blv")
+  dots_bmv <- dots_format(sprintf("~ %s_blv/max(%s_blv, na.rm = TRUE)", x, x)
+                          , suffix = "_bmv")
+  
   if (!is.na(threshold)) {
     dots_bmv <- dots_format(sprintf("~ %s_blv > %s", x, threshold), suffix = "_bmv")
   }
+  
   sl@data <- sl@data %>%
     dplyr::group_by(i, j) %>%
-    dplyr::mutate_(.dots = dots_blv) %>%
+    dplyr::mutate(!!.dots := !!rlang::parse_expr(dots_blv)) %>%
     dplyr::ungroup() %>%
-    dplyr::mutate_(.dots = dots_bmv) %>%
+    dplyr::mutate(!!.dots := !!rlang::parse_expr(dots_bmv)) %>%
     as.data.frame()
-  # return
+
+    # return
   return(sl)
 }
 
@@ -115,20 +123,25 @@ areal_wombling_bayesian <- function(formula, family, sp, phi = "leroux", thresho
 #' @importFrom magrittr "%<>%"
 #' @importFrom magrittr "%>%"
 #' @export
+#'
+
 border_lines <- function(sp, longlat = TRUE) {
   # Coerce simple feature geometries to corresponding Spatial* objects
   if (is(sp, "sf")) sp <- as(sp, "Spatial")
   P <- sp::polygons(sp)
+  
   # get adjacency matrix A
   # nb <- spdep::poly2nb(sp, row.names = rownames(sp), queen = FALSE)
   # A  <- nb2mat::nb2mat(nb, style = "B", zero.policy = TRUE)
   nb <- spdep::poly2nb(sp, queen = FALSE)
+  
   # create data.frame with adjacent areas
   greater_than <- function(a, b) a[a > b]
   data <- data.frame(i = 1:length(nb), j = NA) %>%
     group_by(i, j) %>%
     do(expand.grid(i = .$i, j = greater_than(nb[[.$i]], .$i))) %>%
     as.data.frame()
+  
   # area borders as SpatialLines
   lines <- apply(data, 1, function(d) {
     i <- as.numeric(d["i"])
@@ -136,16 +149,19 @@ border_lines <- function(sp, longlat = TRUE) {
     # get list of coordinates for polygons
     c1 <- plyr::llply(P@polygons[[i]]@Polygons, sp::coordinates)
     c2 <- plyr::llply(P@polygons[[j]]@Polygons, sp::coordinates)
+    
     # get borders for each combination of polygons
     grid <- expand.grid(s1 = 1:length(c1), s2 = 1:length(c2))
     line <- apply(grid, 1, function(obj) {
       a <- c1[[obj["s1"]]]
       b <- c2[[obj["s2"]]]
+      
       # select intersecting rows
       sel <- a[, 1] %in% b[, 1] & a[, 2] %in% b[, 2]
       if (sum(sel) == 0) {
         return(NULL)
       }
+      
       # create Line object for each sequence of matching coordinates
       runs <- rle(sel)
       runs <- data.frame(
@@ -154,12 +170,14 @@ border_lines <- function(sp, longlat = TRUE) {
         len = runs$length
       ) %>%
         dplyr::filter(val)
+      
       # coordinates for each sequence
       pos <- plyr::alply(as.matrix(runs), 1, . %>%
         {
           .[["i"]]:(.[["i"]] + .[["len"]] - 1)
         })
       coords <- plyr::llply(pos, . %>% a[., , drop = FALSE])
+      
       # remove duplicate line elements
       len_one <- plyr::laply(coords, nrow) == 1
       if (!all(len_one) & any(len_one)) {
