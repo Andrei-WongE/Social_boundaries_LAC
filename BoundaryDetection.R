@@ -41,16 +41,33 @@ areal_wombling <- function(sp, x, threshold = NA
                           , suffix = "_bmv")
   
   if (!is.na(threshold)) {
-    dots_bmv <- dots_format(sprintf("~ %s_blv > %s", x, threshold), suffix = "_bmv")
+    dots_bmv <- dots_format(sprintf("~ %s_blv > %s", x, threshold)
+                            , suffix = "_bmv")
   }
   
+  # sl@data <- sl@data %>%
+  #   dplyr::group_by(i, j) %>%
+  #   dplyr::mutate_(.dots = dots_blv) %>%
+  #   dplyr::ungroup() %>%
+  #   dplyr::mutate_(.dots = dots_bmv) %>%
+  #   as.data.frame()
+  
+  # First, create the *_blv columns
   sl@data <- sl@data %>%
     dplyr::group_by(i, j) %>%
-    dplyr::mutate(!!.dots := !!rlang::parse_expr(dots_blv)) %>%
+    dplyr::mutate(!!!rlang::set_names(map(names(dots_blv), ~rlang::eval_tidy(dots_blv[[.]], .data)[[2]]), names(dots_blv))) %>%
     dplyr::ungroup() %>%
-    dplyr::mutate(!!.dots := !!rlang::parse_expr(dots_bmv)) %>%
     as.data.frame()
-
+  
+  # Then, create the *_bmv columns
+  sl@data <- sl@data %>%
+    dplyr::group_by(i, j) %>%
+    dplyr::mutate(!!!rlang::set_names(map(names(dots_bmv), ~rlang::eval_tidy(dots_bmv[[.]], .data)[[2]]), names(dots_bmv))) %>%
+    dplyr::ungroup() %>%
+    as.data.frame()
+  
+  
+  
     # return
   return(sl)
 }
@@ -79,33 +96,44 @@ areal_wombling <- function(sp, x, threshold = NA
 #'   membership value (boundary probability if \code{threshold} is defined). Second, \code{sampes} includes
 #'   additional elements for the McMC samples of the boundary likelihood value and the boundary membership value.
 #' @export
-areal_wombling_bayesian <- function(formula, family, sp, phi = "leroux", threshold = NA, ...) {
+#' 
+areal_wombling_bayesian <- function(formula, family, sp
+                                    , phi = "leroux"
+                                    , threshold = NA, ...) {
   if (!(phi %in% c("leroux", "IAR", "BYM"))) stop("Incorrect prior for the random effect.")
+  
   # Coerce simple feature geometries to corresponding Spatial* objects
   if (is(sp, "sf")) sp <- as(sp, "Spatial")
+  
   # get borders as line segments in SpatialLinesDataFrame
   sl <- border_lines(sp)
+  
   # polygon adjacency matrix
   W.nb <- spdep::poly2nb(sp, row.names = rownames(sp))
   W.mat <- spdep::nb2mat(W.nb, style = "B", zero.policy = TRUE)
   # rownames(W.mat) <- NULL
+  
   # Bayesian hierarchical model with spatially correlated random effects
   if (phi == "leroux") m <- CARBayes::S.CARleroux(formula, family, data = sp@data, W = W.mat, ...)
   if (phi == "IAR") m <- CARBayes::S.CARiar(formula, family, data = sp@data, W = W.mat, ...)
   if (phi == "BYM") m <- CARBayes::S.CARbym(formula, family, data = sp@data, W = W.mat, ...)
+  
   # posterior distribution of boundary likelihood value (BLV) and boundary membership value (BMV)
   # fitted values (mu): m$samples$fitted[1,] == m$samples$beta[1,] + m$samples$phi[1,]
   blv <- posterior_blv(m$samples$fitted, as.matrix(sl@data[, 1:2]))
   if (is.na(threshold)) bmv <- t(apply(blv, 1, function(iter) iter / max(iter)))
   if (!is.na(threshold)) bmv <- blv > threshold
+  
   # create MCMC object for blv and bmv
   mcpar <- attr(m$samples$beta, "mcpar")
   m$samples$blv <- coda::mcmc(blv, start = mcpar[1], end = mcpar[2], thin = mcpar[3])
   m$samples$bmv <- coda::mcmc(bmv, start = mcpar[1], end = mcpar[2], thin = mcpar[3])
+  
   # add posterior median to SpatialLinesDataFrame
   sl$blv_median <- apply(blv, 2, median)
   if (is.na(threshold)) sl$bmv_median <- apply(blv, 2, median)
   if (!is.na(threshold)) sl$bmv_mean <- colMeans(bmv)
+  
   # return model and SpatialLinesDataFrame
   m$borders <- sl
   return(m)
@@ -138,8 +166,8 @@ border_lines <- function(sp, longlat = TRUE) {
   # create data.frame with adjacent areas
   greater_than <- function(a, b) a[a > b]
   data <- data.frame(i = 1:length(nb), j = NA) %>%
-    group_by(i, j) %>%
-    do(expand.grid(i = .$i, j = greater_than(nb[[.$i]], .$i))) %>%
+    dplyr::group_by(i, j) %>%
+    dplyr::do(expand.grid(i = .$i, j = greater_than(nb[[.$i]], .$i))) %>%
     as.data.frame()
   
   # area borders as SpatialLines

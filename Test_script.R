@@ -24,9 +24,14 @@ groundhog.library(c("tidycensus", "stargazer", "lintr",
 
     tidycensus::census_api_key(
       "CENSUS_API_KEY"
-      , install = TRUE
-      , overwrite=TRUE
-    ) # See Sys.getenv("CENSUS_API_KEY")
+      # , install = TRUE #key in your .Renviron file
+      # , overwrite=TRUE #Only the 1st time
+    ) 
+    
+    # # First time, reload your environment so you can use the key without restarting R.
+    # readRenviron("~/.Renviron")
+    # # You can check it with:
+    # Sys.getenv("CENSUS_API_KEY")
 
 # 2010 decennial census data on the census tract level (chi_sf1)
 # 2007-2011 ACS 5-years estimates (chi_acs) for Cook County, Illinois.
@@ -176,33 +181,34 @@ chi_acs <- chi_acs %>%
   ) 
 
 chi_acs <- chi_acs %>%
-  select(CT_CODE, con_disadv, res_instab, immi_con)
+  dplyr::select(CT_CODE, con_disadv, res_instab, immi_con)
 
 # join decennial census with ACS data
 chi_ct <- chi_sf1 %>% left_join(chi_acs, by = "CT_CODE")
 
 # Merge with crime data  ################################################
-chi_crime <- read_csv("http://jlegewie.com/files/chi-violent-crime-bg-2011.csv"
+
+chi_crime <- read_csv(here("Data", "chi-violent-crime-bg-2011.csv")
                       , col_types = list(col_character(), col_integer())
                     )
 
 chi_crime <- chi_crime %>%
   mutate(CT_CODE = str_sub(BG_CODE, 1, 11)) %>%
   group_by(CT_CODE) %>%
-  summarize(crime_violent = sum(crime_violent))
+  dplyr::summarize(crime_violent = sum(crime_violent))
 
 chi_ct <- chi_ct %>% left_join(chi_crime, by = "CT_CODE")
 
-# restrict our data to Chicago.
+# restrict data to Chicago.
 chi_ct <- chi_ct %>% filter(complete.cases(crime_violent))
 
 # Boundary detection ################################################
 vars <- c("p_race_white", "p_race_black", "p_race_hisp", "p_race_asian")
 
-#sp do not support empty geometries
-sum(st_is_empty(chi_ct))
-# [1] 1
-chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
+# #sp do not support empty geometries
+# sum(st_is_empty(chi_ct))
+# # [1] 1
+# chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
 
 
 #FUNCTION ERRORS!!!!!
@@ -218,12 +224,25 @@ chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
 #'ORIGIN ERROR 2: function deprecated
 #'SOLUTION ERROR 2: use mutate instead of mutate_
 #'LOCATION ERROR 2: function areal_wombling:49&51
+#'DOWNSTREAM ERROR DUE TO SOLUTION 2:  mutate() cannot handle formulas directly. 
+#'use rlang::eval_tidy() to evaluate the formulas within the data frame’s context.
+#'
+#'
+  # debug(areal_wombling)
 
 bdr <- areal_wombling(  chi_ct
                       , vars
                       , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
                       ) 
 
+
+# bdr <- areal_wombling_bayesian(chi_crime$crime_violent ~ 1 #estimates a model without covariates.
+#                         ,"poisson"
+#                         , chi_ct, 
+#                         , vars
+#                         , phi = "leroux"
+#                         , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
+#                         ) 
 
 # Mapping ################################################
 par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
@@ -239,6 +258,7 @@ legend(-87.87, 41.73,
   fill = scale_color(vals), cex = 0.8,
   box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
 )
+
 # Plot 2: Boundaries
 plot(bdr, lwd = rescale(bdr$p_race_black_blv, to = c(0.1, 1.25)))
 # The spatial lines object does not include Chicago's city boundaries. Let's add them
