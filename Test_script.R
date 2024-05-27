@@ -204,7 +204,7 @@ chi_ct <- chi_ct %>% filter(complete.cases(crime_violent))
 
 # Boundary detection ################################################
 vars <- c("p_race_white", "p_race_black", "p_race_hisp", "p_race_asian")
-
+vars <- c("POB_SUB", "POB_INF")
 # #sp do not support empty geometries
 # sum(st_is_empty(chi_ct))
 # # [1] 1
@@ -226,11 +226,11 @@ vars <- c("p_race_white", "p_race_black", "p_race_hisp", "p_race_asian")
 #'LOCATION ERROR 2: function areal_wombling:49&51
 #'DOWNSTREAM ERROR DUE TO SOLUTION 2:  mutate() cannot handle formulas directly. 
 #'use rlang::eval_tidy() to evaluate the formulas within the data frame’s context.
-#'
+#'modify your code to evaluate the formulas in dots_blv and dots_bmv and return a vector
 #'
   # debug(areal_wombling)
 
-bdr <- areal_wombling(  chi_ct
+bdr <- areal_wombling(  data_clean
                       , vars
                       , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
                       ) 
@@ -246,6 +246,7 @@ bdr <- areal_wombling(  chi_ct
 
 # Mapping ################################################
 par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+
 # Plot 1: Areal units with proportion African-American
 scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
 plot(as(chi_ct, "Spatial"),

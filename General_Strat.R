@@ -22,18 +22,21 @@
 
 ## Load required packages ----
 
-  if (!require("pacman","groundhog", "here")) {
-    
-    install.packages(c("pacman","groundhog", "here"))
-  }
+
+if (!require("pacman")|!require("groundhog")| !require("here")) {
   
-  library(pacman)
-  library(here)
+  install.packages(c("pacman","groundhog", "here"))
+}
+
+
+library("pacman")
+library("here")
+library("groundhog")
 
 # install.packages("groundhog")
 library("groundhog")
 set.groundhog.folder(here("groundhog_library"))
-groundhog.day = "2020-05-12"
+groundhog.day = "2024-04-25" #"2020-05-12"
 #Dowloaded fromn https://github.com/CredibilityLab/groundhog
 
 pkgs = c("dplyr", "tidyverse", "janitor", "sf"
@@ -61,10 +64,10 @@ groundhog.library(pkgs, groundhog.day)
   #                               "--no-manual"), 
   #                build_vignettes = FALSE)
   # install.packages("bigDM")
-
-library("socialFrontiers")
-library("INLA")
-library("bigDM")
+# 
+# library("socialFrontiers")
+# library("INLA")
+# library("bigDM")
 
 #!!!POTENTIAL PROBLEMATIC DEPENDENCIES:
 #Checkmate->htmlTable->Hmisc
@@ -285,7 +288,7 @@ stopCluster(cl)
     neighb <- spdep::poly2nb( data$geometry
                             , queen = TRUE
                             , row.names = data$id_mz
-                            , snap = 10
+                            , snap = 200
                             )
     
     neighb
@@ -305,20 +308,26 @@ spdep::is.symmetric.nb(neighb)
 # [1] TRUE
 
 table(st_is_valid(data))
- 
   # FALSE  TRUE 
-  # 1 13575 
+  # 1 11438
 
 data_clean <- st_make_valid(data)
 
 table(st_is_valid(data_clean))
-# TRUE 
-# 13576 
+# TRUE
+# 13576
+
+#sp do not support empty geometries
+sum(st_is_empty(data_clean))
+# [1] 0
+data <- data[!st_is_empty(data_clean), ]
 
 # Identify if polygons share a border
 touching <- st_touches(data_clean, sparse = TRUE) #sparse = FALSE to return a matrix
 # apply(touching, 1, any)
-lengths(touching) > 0
+table(lengths(touching) > 0)
+  # FALSE  TRUE 
+  # 11411    28
 
 #RESULT: some polygons are touching other polygon, hence the no valid polygons
 #SFA, page 26 clause c of what constitutes a valid polygon: "No two Rings in the 
@@ -386,26 +395,28 @@ all.equal(data, data_clean, check.attributes=FALSE) # There are 28 differences
 # Subdivide the MULTIPOLYGON object into single polygons
 data_clean <- st_cast(data_clean, "POLYGON")
 
-
+#sp do not support empty geometries
+sum(st_is_empty(data_clean))
+# [1] 1
+data_clean <- data_clean[!st_is_empty(data_clean), ]
 
 
 # Create neighbors--------------------------------------------------------------
 
-
 neighb_clean_nb <- spdep::poly2nb(  data_clean
-                                   , row.names = "id_mz"
+                                   , row.names = data_clean$id_mz
                                    , queen = TRUE
                                    , useC = TRUE
-                                   , snap = 10
+                                   , snap = 200
                                 )
 neighb_clean_nb
 
     # Neighbour list object:
-    #   Number of regions: 13579 
-    # Number of nonzero links: 74 
-    # Percentage nonzero weights: 0.00004013 
-    # Average number of links: 0.00545 
-    # 13509 regions with no links:
+    # Number of regions: 13576 
+    # Number of nonzero links: 719586 
+    # Percentage nonzero weights: 0.3904 
+    # Average number of links: 53 
+    # 2 disjoint connected subgraphs
 
 # Create a vector indicating whether each polygon has at least one neighbor
 has_neighb_clean <- sapply(neighb_clean_nb, function(x) length(x) > 0)
