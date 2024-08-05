@@ -15,6 +15,9 @@ groundhog.library(c("tidycensus", "stargazer", "lintr",
 
 # library("BoundaryDetection")
 
+# Loading functions
+source(here("BoundaryDetection.R"))
+
 --------------------------------------------------------------
   # Code mainly from Legewie, 2018. See supplementary material.#
 --------------------------------------------------------------
@@ -204,7 +207,7 @@ chi_ct <- chi_ct %>% filter(complete.cases(crime_violent))
 
 # Boundary detection ################################################
 vars <- c("p_race_white", "p_race_black", "p_race_hisp", "p_race_asian")
-vars <- c("POB_SUB", "POB_INF")
+# vars <- c("POB_SUB", "POB_INF")
 # #sp do not support empty geometries
 # sum(st_is_empty(chi_ct))
 # # [1] 1
@@ -230,7 +233,7 @@ vars <- c("POB_SUB", "POB_INF")
 #'
   # debug(areal_wombling)
 
-bdr <- areal_wombling(  data_clean
+bdr <- areal_wombling(  chi_ct
                       , vars
                       , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
                       ) 
@@ -299,6 +302,7 @@ legend(-87.87, 41.73,
   cex = 0.8, box.lty = 0, border = "#00000000",
   title = "Boundary Value", title.adj = 3.5
 )
+
 # Plot 2: Boundary values for border line segments for areal units
 sel <- is.finite(chi_ct$p_race_black_blv)
 scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))

@@ -525,6 +525,11 @@ data_clean <- data_clean %>%
 
 #Run the model-----------------------------------------------------------------
 
+if (require("frontier")) {
+  break
+  # install.packages("frontier")
+  # library("frontier")
+
 # set parameters
 y <- 'POBRE_COUNT' # Number of persons in poverty, official income definition
 n.trials <- 'POP' #total population (per block)
@@ -536,6 +541,12 @@ frontier_model <- frontier_detect(  y = y
                                   , zero.policy = TRUE
                                   , verbose = TRUE
                                   )
+}
+
+
+
+
+
 
 #!!!ERROR:
   # Error in nb2listw(neighbours, glist = glist, style = style, zero.policy = zero.policy) : 

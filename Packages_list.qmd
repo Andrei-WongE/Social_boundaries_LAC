@@ -1,0 +1,27 @@
+---
+title: "Packages for boundary identification"
+format: docx
+editor: visual
+toc: true
+toc-depth: 2
+number-sections: true
+number-depth: 3
+---
+
+## List of packages for boundary identification
+
+## Univariate
+
+```{r}
+1 + 1
+```
+
+You can add options to executable code like this
+
+## Multivariate
+
+#### Multivariate difference boundary detection for areal data       
+
+Source: <https://github.com/LeiwenG/Multivariate_differenceboundary>
+
+Citation key: wuAssessingSpatialDisparities2024
