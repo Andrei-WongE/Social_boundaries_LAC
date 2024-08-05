@@ -12,11 +12,29 @@ number-depth: 3
 
 ## Univariate
 
-```{r}
-1 + 1
-```
+### Bayesian Modeling with Spatial Curvature Processes
 
-You can add options to executable code like this
+Source: <https://github.com/arh926/spWombling>
+
+Citation key:
+
+### Assessing Spatial Disparities: A Bayesian Linear Regression Approach
+
+Source: <https://github.com/Ky-Wu/bayesian_spatial_health_disparities>
+
+Citation key: wuAssessingSpatialDisparities2024
+
+### `womblR Package`
+
+Source: <https://cran.r-project.org/web/packages/womblR/vignettes/womblR-example.html>
+
+Citation key:
+
+### Nonparametric-Areal-Wombling-for-small-scale-map
+
+Source:
+
+Citation key:
 
 ## Multivariate
 
@@ -24,4 +42,4 @@ You can add options to executable code like this
 
 Source: <https://github.com/LeiwenG/Multivariate_differenceboundary>
 
-Citation key: wuAssessingSpatialDisparities2024
+Citation key: gaoSpatialDifferenceBoundary2023
