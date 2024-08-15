@@ -24,6 +24,8 @@ Source: <https://github.com/Ky-Wu/bayesian_spatial_health_disparities>
 
 Citation key: wuAssessingSpatialDisparities2024
 
+Code for detecting spatial disparities in a BYM2 model. BYM (Besag, York and Mollie ́) model, first introduced in Besag et al. (1991), which includes both a spatially correlated and unstructured error component as part of a Poisson generalized linear model. However, Simpson et al. (2017) and Riebler et al. (2016) explain the error components are not identifiable and scaling issues complicate interpretation of the variance parameters in the BYM model. This papers follows the parametric form of the BYM model in Riebler et al. (2016) that ensures identifiable error components and imparts better interpretation.
+
 ### `womblR Package`
 
 Source: <https://cran.r-project.org/web/packages/womblR/vignettes/womblR-example.html>
@@ -32,13 +34,27 @@ Citation key:
 
 ### Nonparametric-Areal-Wombling-for-small-scale-map
 
-Source:
+Source: <https://github.com/rajguhaniyogi/Nonparametric-Areal-Wombling-for-small-scale-map>
 
 Citation key:
 
+Proposes a novel and robust nonparametric boundary detection technique, coined as the Dirichlet ProcessWombling (DPW) rule, by employing Dirichlet Process based mixture models for small scale maps. Unlike the recently proposed nonparametric boundary detection rules based on false discovery rates, DPW is free of ad-hoc parameters, computationally simple.
+
+### Spatial boundaries
+
+Source: <https://github.com/PoisotLab/SpatialBoundaries.jl>
+
+Citation key:
+
+### Living on the Edge: Neighborhood Boundaries and the Spatial Dynamics of Violent CrimeLiving on the Edge: Neighborhood Boundaries and the Spatial Dynamics of Violent Crime
+
+Source: BoudaryDetection.R
+
+Citation key: legewieLivingEdgeNeighborhood2018
+
 ## Multivariate
 
-#### Multivariate difference boundary detection for areal data       
+#### Multivariate difference boundary detection for areal data
 
 Source: <https://github.com/LeiwenG/Multivariate_differenceboundary>
 
