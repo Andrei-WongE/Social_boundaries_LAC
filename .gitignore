@@ -14,6 +14,7 @@
 # Data folder
 /data/
 /.quarto/
+/src/
 # Output files from R CMD build
 /*.tar.gz
 # Output files from R CMD check
