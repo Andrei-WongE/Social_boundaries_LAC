@@ -386,3 +386,5 @@ print(xtable(disparity_df
        , include.rownames = TRUE
        , tabular.environment = "longtable"
       )
+
+gc()
