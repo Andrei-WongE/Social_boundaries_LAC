@@ -171,6 +171,218 @@ phi_diffs <- BYM2_StdDiff(phi_sim, rho_sim, Q_scaled, X, ij_list)
   theme_bw()
 )
 
+# Minimize the conditional entropy loss function: ----
+# Maximize conditional entropy with respect to epsilon
+loss_function <- function(V, epsilon) -ConditionalEntropy(V)
+
+eps_optim <- optim(median(abs(phi_diffs)), function(e) {
+  e_vij <- ComputeSimVij(phi_diffs, epsilon = e)
+  loss_function(e_vij, epsilon = e)
+}, method = "Brent", lower = 0.0001, upper = 5.0)
+
+optim_e <- eps_optim$par #optimun difference threshold
 
 
+# The resulting difference threshold ϵCE = 0.9282174, the a Monte Carlo estimates 
+# of the difference probabilities is computed:
+optim_e_vij <- ComputeSimVij(phi_diffs, epsilon = optim_e)
 
+# Plotting the ϵCE difference probabilities
+(optim_e_vij_hist <- ggplot() +
+    geom_histogram(aes(x = optim_e_vij), fill = "dodgerblue", color = "black",
+                   breaks = seq(0, 1, by = .05)) +
+    lims(x = c(0, 1)) +
+    labs(x = paste0("v_ij(", round(optim_e, digits = 3), ")")) +
+    theme_bw()
+)
+
+# Bayesian FDR Control: ----
+# select cutoff t in d(i, j) = I(v_ij > t) to control FDR and minimize FNR
+optim_e_vij_order <- order(optim_e_vij, decreasing = F)
+eta <- .05
+t_seq_length <- 10000
+
+t_seq <- seq(0, max(optim_e_vij) - .001, length.out = t_seq_length)
+t_FDR <- vapply(t_seq, function(t) FDR_estimate(optim_e_vij, t, e = 0), numeric(1))
+t_FNR <- vapply(t_seq, function(t) FNR_estimate(optim_e_vij, t, e = 0), numeric(1))
+
+optim_t <- min(c(t_seq[t_FDR <= eta], 1))
+
+# As result, the chosen threshold is t⋆(ϵCE) = 0.8815059
+
+# Final reported disparities: ----
+decisions <- logical(nrow(ij_list))
+decisions[optim_e_vij >= optim_t] <- TRUE
+
+# proportion of boundaries reported as spatial disparity
+mean(decisions)
+# [1] 0.0792676 vs # [1] 0.08313431 in PDF [CHECK!!]
+
+# Checking stability of rankings s with respect to choice of the difference threshold: -----
+# plotting the rankings of the difference probabilities under different values of 
+# the difference threshold ϵ and compare to those previously computed using ϵCE.
+optim_e_vij_order <- order(optim_e_vij, decreasing = F)
+
+rej_indx <- optim_e_vij_order[optim_e_vij_order %in%
+                                which(optim_e_vij >= optim_t)]
+
+detected_borders <- ij_list[rej_indx,]
+
+node1_all <- cancer_smoking_sf[detected_borders$i,]
+node2_all <- cancer_smoking_sf[detected_borders$j,]
+
+intersections <- lapply(seq_len(sum(decisions)), function(i) {
+  node1 <- node1_all[i,]
+  node2 <- node2_all[i,]
+  suppressMessages(st_intersection(st_buffer(node1, 0.0003),
+                                   st_buffer(node2, 0.0003)))
+}) %>%
+  do.call(rbind, .)
+
+intersections$rank <- sort(seq_len(sum(decisions))
+                           , decreasing = TRUE) # intersections a sf data.frame
+
+
+## Now using 4 different difference threshold values
+e2 <- round(optim_e / 3, digits = 3)
+e3 <- round(optim_e / 1.5, digits = 3)
+e4 <- round(optim_e * 1.5, digits = 3)
+e5 <- round(optim_e * 3, digits = 3)
+
+e2_vij <- ComputeSimVij(phi_diffs, epsilon = e2)
+e3_vij <- ComputeSimVij(phi_diffs, epsilon = e3)
+e4_vij <- ComputeSimVij(phi_diffs, epsilon = e4)
+e5_vij <- ComputeSimVij(phi_diffs, epsilon = e5)
+
+# Note: the R order function returns permutation index to sort vector, NOT vector of ranks
+optim_e_vij_order <- order(optim_e_vij, decreasing = F)
+e2_vij_order <- order(e2_vij[optim_e_vij_order], decreasing = F)
+e3_vij_order <- order(e3_vij[optim_e_vij_order], decreasing = F)
+e4_vij_order <- order(e4_vij[optim_e_vij_order], decreasing = F)
+e5_vij_order <- order(e5_vij[optim_e_vij_order], decreasing = F)
+
+rejection_path <- data.table(
+  optim_e_order = seq_along(optim_e_vij),
+  e2_vij_order = e2_vij_order,
+  e3_vij_order = e3_vij_order,
+  e4_vij_order = e4_vij_order,
+  e5_vij_order = e5_vij_order,
+  classified_diff = decisions[optim_e_vij_order])
+
+rejection_path <- melt(rejection_path,
+                       id.vars = c("optim_e_order", "classified_diff"),
+                       variable.name = "order_type",
+                       value.name = "order")
+
+rejection_path[, order_type := fcase(
+  order_type == "e2_vij_order", paste0("eps = ", e2),
+  order_type == "e3_vij_order", paste0("eps = ", e3),
+  order_type == "e4_vij_order", paste0("eps = ", e4),
+  order_type == "e5_vij_order", paste0("eps = ", e5)
+)]
+
+# Plotting paths
+(vij_order_graph <- ggplot() +
+  geom_point(data = rejection_path,
+             aes(x = optim_e_order, y = order, color = classified_diff,
+                 shape = classified_diff),
+             alpha = 0.3, size = 1) +
+  geom_vline(xintercept = nrow(ij_list) - sum(optim_e_vij == 1)) +
+  facet_grid(~order_type) +
+  labs(x = paste0("Rank of v_ij(", round(optim_e, digits = 3), ")"),
+       y = "Rank of v_ij(eps)") +
+  theme_bw() +
+  scale_color_manual(name = paste0("eps = ", round(optim_e, digits = 3)),
+                     labels = c("Not classified difference", "Classified difference"),
+                     values = c("FALSE" = "darkgrey", "TRUE" = "dodgerblue")) +
+  scale_shape_manual(name = paste0("eps = ", round(optim_e, digits = 3)),
+                     labels = c("Not classified difference", "Classified difference"),
+                     values = c(2, 7)) +
+  guides(colour = guide_legend(override.aes = list(size = 2, alpha = 1)),
+         shape = guide_legend(override.aes = list(size = 2, alpha = 1)))
+)
+
+# Posterior Means and Boundaries Map: ----
+yfit_pmeans <- colMeans(YFit_sim)
+
+# Building sf database of yfit
+yfit_pmeans_sf <- cbind(y_pmeans = cut(  yfit_pmeans
+                                       , cut_pts
+                                       , right = FALSE
+                                       , include.lowest = TRUE),
+                        cancer_smoking_sf)
+
+# Plotting boundaries
+(yfit_pmeans_map <- ggplot() +
+  geom_sf(data = county_sf, col = "gray") +
+  geom_sf(data = yfit_pmeans_sf, aes(fill = y_pmeans), col = "gray") +
+  scale_fill_viridis_d(name = "Y posterior mean", drop = FALSE) +
+  geom_sf(data = intersections, col = "red", alpha = 0, lwd = 0.4) +
+  coord_sf(crs = st_crs(5070)) +
+  theme_bw() +
+  theme(legend.position = "bottom", legend.title=element_text(size=10))
+)
+
+# 95% credible intervals of all parameters except γ:----
+params_sim <- cbind(samps$beta, samps$sigma2, samps$rho)
+
+alpha <- 0.05
+
+params_summary <- apply(params_sim, MARGIN = 2, function(x) {
+  data.table(mean = mean(x), lower = quantile(x, alpha / 2),
+             upper = quantile(x, 1 - alpha / 2))
+}) %>%
+  do.call(rbind, .)
+
+round_digits <- 3
+
+params_summary[, ':='(
+  Parameter = c("$\\beta_0$", "$\\beta_1$", "$\\sigmaˆ2$", "$\\rho$"),
+  Description = c("Intercept", "Smoking prevalence", "Total variance", "Spatial proportion of variance"),
+                  'Mean' = round(mean, digits = round_digits),
+                  '95\\% Credible Interval' = paste0("(", round(lower, digits = round_digits), ", ",
+                                                     round(upper, digits = round_digits), ")")
+  )]
+
+params_summary <- params_summary[ , .(Parameter, Description, 'Mean', '95\\% Credible Interval')]
+
+rownames(params_summary) <- NULL
+
+print(xtable(  params_summary
+             , type = "latex"
+             , caption = "Posterior summaries of non-spatial effect parameters."
+             , label = "tab:RDA_post_summaries"
+             , align = c("c", "c", "c", "c", "c")
+             )
+             , type = "latex"
+             , sanitize.text.function = function(x) {x},
+                  include.rownames = FALSE,
+                  file = here( "Output", "params_summary.tex")
+    )
+
+
+# Reported spatial disparities in lung cancer mortality between neighboring US counties. ----
+rankings <- order(optim_e_vij[decisions], decreasing = TRUE)
+
+node1_indx <- ij_list[decisions,]$i[rankings]
+node2_indx <- ij_list[decisions,]$j[rankings]
+
+(disparity_df <- data.table(
+                `County 1` = cancer_smoking_sf$location[node1_indx],
+                `County 2` = cancer_smoking_sf$location[node2_indx],
+                `$v_k(\\epsilon_{CE})$` = optim_e_vij[decisions][rankings]
+                          )
+)
+
+print(xtable(disparity_df
+             , type = "latex"
+             , digits = 3
+             , caption = "Reported spatial disparities in lung cancer mortality between neighboring US."
+             , label = "tab:RDA_disparities_table"
+             , align = c("c", "c", "c", "c")
+             )
+       , type = "latex"
+       , sanitize.text.function = function(x) {x}
+       , include.rownames = TRUE
+       , tabular.environment = "longtable"
+      )
