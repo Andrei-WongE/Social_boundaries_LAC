@@ -28,7 +28,7 @@ Code for detecting spatial disparities in a BYM2 model. BYM (Besag, York and Mol
 
 For a practical example see:
 
-``` R
+``` r
  source()
 ```
 
