@@ -7,6 +7,9 @@ require(dplyr)
 require(spdep)
 require(ggplot2)
 require(janitor)
+require(openxlsx)
+packageVersion("openxlsx")
+# [1] ‘4.2.5.2’
 
 # Get LSOA boundaries:----
 # from: https://data.london.gov.uk/dataset/statistical-gis-boundary-files-london
@@ -143,10 +146,81 @@ lsoa_data_sf <- lsoa_data_sf %>%
                 , "health_bad_or_very_bad_health_percent_2011"
                 , "car_or_van_availability_no_cars_or_vans_in_household_percent_2011"
               )
-                
+
+# Adding other sources of data, checl NOMIS
+dir(here("Data", "London"), pattern = ".csv")
+# [1] "employment_pop.csv"             
+# [2] "local_units_indus-employ.csv"  MSOA!!! 
+# [3] "LSOA_Atlas.csv"                 
+# [4] "Qualification_by_age_LSOA11.csv"
+
+url <- "https://www.nomisweb.co.uk/api/v01/dataset/NM_141_1.data.xlsx?geography=1245708449...1245708476,1245708289,1245708620...1245708645,1245715064,1245715067,1245708646...1245708705,1245714941,1245708822...1245708865,1245708886...1245708919,1245714947,1245708920...1245708952,1245714930,1245714931,1245714944,1245708978...1245709014,1245709066...1245709097,1245714948,1245709121...1245709150,1245714999,1245715000,1245709179...1245709239,1245708290...1245708310,1245714945,1245708311...1245708378,1245714932,1245708379...1245708448,1245714929,1245714934,1245714936,1245708477...1245708519,1245714935,1245708520...1245708557,1245714938,1245708558...1245708592,1245714940,1245708593...1245708619,1245714933,1245715072...1245715076,1245708706...1245708733,1245714942,1245715028,1245708734...1245708794,1245714943,1245708795...1245708821,1245714939,1245708866...1245708885,1245708953...1245708977,1245709015...1245709042,1245714946,1245715069,1245715070,1245709043...1245709065,1245709098...1245709120,1245714982,1245709151...1245709178&date=latestMINUS12&industry=163577857...163577874&employment_sizeband=0,10,20,30,40&legal_status=0,10&measures=20100&signature=NPK-e156dc8ba10b7412aa8bed:0x6ee9910ec10c11565ad435bf27a42320737b893c"
+##Content
+# 2
+# 2011, Total, Total, value
+# 3
+# 2011, Total, Private sector total, value
+# 4
+# 2011, Micro (0 to 9), Total, value
+# 5
+# 2011, Micro (0 to 9), Private sector total, value
+# 6
+# 2011, Small (10 to 49), Total, value
+# 7
+# 2011, Small (10 to 49), Private sector total, value
+# 8
+# 2011, Medium-sized (50 to 249), Total, value
+# 9
+# 2011, Medium-sized (50 to 249), Private sector total, value
+# 10
+# 2011, Large (250+), Total, value
+# 11
+# 2011, Large (250+), Private sector total, value
+
+local_units <- read.xlsx(  url
+                         , sheet = 3
+                         , startRow = 2
+                         , skipEmptyRows = TRUE
+                         , skipEmptyCols = TRUE
+                         # , rows = c(2:10138)
+                         # , cols = c(1:20)
+                 )
+
+View(local_units)
+
+# Function to detect blank rows
+is_blank_row <- function(row) {
+  all(row == "")
+}
+
+# Identify the start and end rows of each table
+table_starts <- which(apply(local_units, 1, is_blank_row) == FALSE)
+table_ends <- c(table_starts[-1] - 1, nrow(local_units))
+
+# Extract each table
+tables <- list()
+for (i in seq_along(table_starts)) {
+  tables[[i]] <- data[table_starts[i]:table_ends[i], ]
+}
+
+# Print the extracted tables
+for (i in seq_along(tables)) {
+  print(tables[[i]])
+}
+
+
+
+
+
+lsoa_data_sf <- merge(lsoa_data, local_units, by.x = "LSOA11CD", by.y = "LSOA11CD")
+
+
+
 dim(lsoa_data_sf)
 # [1] 4829   38
-saveRDS(lsoa_data_sf, "lsoa_data_sf.rds")
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
 
 
                 
@@ -154,3 +228,4 @@ saveRDS(lsoa_data_sf, "lsoa_data_sf.rds")
 # Job density https://www.nomisweb.co.uk/datasets/jd
 # Query https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?theme=75&subgrp=Local+Characteristics
 # https://webarchive.nationalarchives.gov.uk/ukgwa/20160105230903/http://www.ons.gov.uk/ons/guide-method/classifications/current-standard-classifications/standard-industrial-classification/index.html
+# https://npalomin.github.io/pnum/IDBR.html
