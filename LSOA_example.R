@@ -1,15 +1,36 @@
 # require(utils)
 # data(london)
 
-require(rmapshaper)
-require(sf)
-require(dplyr)
-require(spdep)
-require(ggplot2)
-require(janitor)
-require(openxlsx)
+if (!require("pacman")|!require("groundhog")| !require("here")) {
+  
+  install.packages(c("pacman","groundhog", "here"))
+}
+
+
+library("pacman")
+library("here")
+library("groundhog")
+
+# install.packages("groundhog")
+library("groundhog")
+set.groundhog.folder(here("groundhog_library"))
+groundhog.day = "2024-04-25" #"2020-05-12"
+#Dowloaded fromn https://github.com/CredibilityLab/groundhog
+
+pkgs = c("dplyr", "tidyverse", "janitor", "sf"
+         , "tmap", "devtools", "renv", "Hmisc", "ggplot2"
+         , "xfun", "remotes", "sp", "spdep", "maptools"
+         , "foreach", "doParallel", "parallel", "progress"
+         , "doSNOW", "purrr", "patchwork", "stringi","rmapshaper"
+         , "dplyr", "openxlsx", "MASS"
+         )
+
+groundhog.library(pkgs, groundhog.day, force.source.main = TRUE)
+# groundhog.library("stringi", groundhog.day, force.source.main = TRUE)
+
 packageVersion("openxlsx")
 # [1] ‘4.2.5.2’
+# renv::snapshot(exclude = c("INLA", "socialFrontiers")
 
 # Get LSOA boundaries:----
 # from: https://data.london.gov.uk/dataset/statistical-gis-boundary-files-london
@@ -188,36 +209,32 @@ local_units <- read.xlsx(  url
 
 View(local_units)
 
-# Function to detect blank rows
-is_blank_row <- function(row) {
-  all(row == "")
-}
-
-# Identify the start and end rows of each table
-table_starts <- which(apply(local_units, 1, is_blank_row) == FALSE)
-table_ends <- c(table_starts[-1] - 1, nrow(local_units))
-
-# Extract each table
-tables <- list()
-for (i in seq_along(table_starts)) {
-  tables[[i]] <- data[table_starts[i]:table_ends[i], ]
-}
-
-# Print the extracted tables
-for (i in seq_along(tables)) {
-  print(tables[[i]])
-}
-
-
-
+# # Function to detect blank rows
+# is_blank_row <- function(row) {
+#   all(row == "")
+# }
+# 
+# # Identify the start and end rows of each table
+# table_starts <- which(apply(local_units, 1, is_blank_row) == FALSE)
+# table_ends <- c(table_starts[-1] - 1, nrow(local_units))
+# 
+# # Extract each table
+# tables <- list()
+# for (i in seq_along(table_starts)) {
+#   tables[[i]] <- data[table_starts[i]:table_ends[i], ]
+# }
+# 
+# # Print the extracted tables
+# for (i in seq_along(tables)) {
+#   print(tables[[i]])
+# }
 
 
 lsoa_data_sf <- merge(lsoa_data, local_units, by.x = "LSOA11CD", by.y = "LSOA11CD")
 
-
-
 dim(lsoa_data_sf)
 # [1] 4829   38
+
 saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
 
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
@@ -229,3 +246,142 @@ lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
 # Query https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?theme=75&subgrp=Local+Characteristics
 # https://webarchive.nationalarchives.gov.uk/ukgwa/20160105230903/http://www.ons.gov.uk/ons/guide-method/classifications/current-standard-classifications/standard-industrial-classification/index.html
 # https://npalomin.github.io/pnum/IDBR.html
+
+
+# Boundaries detection (Following Legewie, 2018) -----
+
+library("MASS")
+# library("matrixStats")
+library("scales")
+
+groundhog.library(c("tidycensus", "stargazer", "lintr",
+                    "styler", "matrixStats", "stringi"
+)
+, groundhog.day
+# , ignore.deps = "Matrix"
+, force.install = TRUE
+)
+
+# library("BoundaryDetection")
+
+# Loading functions
+source(here("BoundaryDetection.R"))
+
+# Difference variables
+colnames(lsoa_data_sf)
+
+vars <- c("POB_SUB", "POB_INF")
+
+# #sp do not support empty geometries
+# sum(st_is_empty(chi_ct))
+# # [1] 1
+# chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
+
+
+#FUNCTION ERRORS!!!!!
+
+#[1]: error in evaluating the argument 'x' in selecting a method for function 
+#'addAttrToGeom': empty geometries are not supported by sp classes: conversion failed
+#'ORIGIN ERROR 1: sp do not support empty geometries
+#'SOLUTION ERROR 1: remove empty geometries
+#'LOCATION ERROR 1: function areal_wombling:25; function areal_wombling_bayesian:84;
+#'                function areal_wombling_bayesian:130
+#'
+#'[2]: `mutate_()` was deprecated in dplyr 0.7.0. Please use `mutate()` instead.
+#'ORIGIN ERROR 2: function deprecated
+#'SOLUTION ERROR 2: use mutate instead of mutate_
+#'LOCATION ERROR 2: function areal_wombling:49&51
+#'DOWNSTREAM ERROR DUE TO SOLUTION 2:  mutate() cannot handle formulas directly. 
+#'use rlang::eval_tidy() to evaluate the formulas within the data frame’s context.
+#'modify your code to evaluate the formulas in dots_blv and dots_bmv and return a vector
+#'
+# debug(areal_wombling)
+
+bdr <- areal_wombling(  chi_ct
+                        , vars
+                        , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
+) 
+
+
+# bdr <- areal_wombling_bayesian(chi_crime$crime_violent ~ 1 #estimates a model without covariates.
+#                         ,"poisson"
+#                         , chi_ct, 
+#                         , vars
+#                         , phi = "leroux"
+#                         , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
+#                         ) 
+
+# Mapping ################################################
+par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+
+# Plot 1: Areal units with proportion African-American
+scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
+plot(as(chi_ct, "Spatial"),
+     col = scale_color(chi_ct$p_race_black),
+     lwd = 0.01, bor = "white"
+)
+vals <- quantile(chi_ct$p_race_black, probs = c(0, 0.25, .5, 0.75, 1), na.rm = TRUE)
+legend(-87.87, 41.73,
+       legend = c("0%", "25%", "50%", "75%", "100%"),
+       fill = scale_color(vals), cex = 0.8,
+       box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
+)
+
+# Plot 2: Boundaries
+plot(bdr, lwd = rescale(bdr$p_race_black_blv, to = c(0.1, 1.25)))
+# The spatial lines object does not include Chicago's city boundaries. Let's add them
+chi <- st_union(chi_ct)
+plot(as(chi, "Spatial"), lwd = 0.5, add = TRUE)
+# Legend showing the scale of boundary values
+legend(-87.87, 41.73,
+       legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+       cex = 0.8, box.lty = 0, border = "#00000000",
+       title = "Boundary Value", title.adj = 3.5
+)
+
+# aggregate from line segments to block group level
+chi_ct_blv <- bind_rows(
+  group_by(bdr@data, i) %>%
+    summarise_at(vars(ends_with("blv")), max, na.rm = TRUE),
+  group_by(bdr@data, j) %>%
+    summarise_at(vars(ends_with("blv")), max, na.rm = TRUE) %>% dplyr::rename(i = j)
+) %>%
+  group_by(i) %>%
+  summarise_at(vars(ends_with("blv")), max, na.rm = TRUE)
+chi_ct <- bind_cols(chi_ct, select(chi_ct_blv, -i))
+
+# compare the boundary values for spatial lines (border line segments) with the
+# boundary values for areal units.
+# for spatial lines (border line segments) with the boundary values for areal units.
+par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+
+# Plot 1: Boundary values for border line segments
+plot(bdr, lwd = rescale(bdr$p_race_black_blv, to = c(0.1, 1.25)))
+chi <- st_union(chi_ct)
+plot(as(chi, "Spatial"), lwd = 0.5, add = TRUE)
+legend(-87.87, 41.73,
+       legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+       cex = 0.8, box.lty = 0, border = "#00000000",
+       title = "Boundary Value", title.adj = 3.5
+)
+
+# Plot 2: Boundary values for border line segments for areal units
+sel <- is.finite(chi_ct$p_race_black_blv)
+scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
+cols <- scale_color(chi_ct$p_race_black_blv[sel])
+plot(as(chi_ct[sel, ], "Spatial"), lwd = 0.1, col = cols, bor = "white")
+legend(-87.87, 41.73,
+       legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+       fill = scale_color(c(0, 0.25, 0.5, 0.75, 1)), cex = 0.8, box.lty = 0,
+       border = "#00000000", title = "Boundary Value", title.adj = 3.5
+)
+
+
+
+# Spatial regression ################################################
+f1 <- "crime_violent ~ edge_wombling_race + log(pop) + p_race_black + p_race_hisp +
+p_race_asian + con_disadv + res_instab + immi_con + hhi + age_15_35_male"
+m1 <- glm.nb(f1, data = chi_ct)
+stargazer(m1, type = "text", no.space = TRUE, star.cutoffs = c(0.05, 0.01, 0.001))
