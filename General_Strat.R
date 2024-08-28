@@ -42,7 +42,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "tmap", "devtools", "renv", "Hmisc", "ggplot2"
          , "xfun", "remotes", "sp", "spdep", "maptools"
          , "foreach", "doParallel", "parallel", "progress"
-         , "doSNOW", "purrr", "patchwork")
+         , "doSNOW", "purrr", "patchwork", "stringi")
 
 groundhog.library(pkgs, groundhog.day)
 

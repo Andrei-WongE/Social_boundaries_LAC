@@ -9,6 +9,7 @@
 .RDataTmp
 # User-specific files
 .Ruserdata
+.zip
 # R Environment Variables
 .Renviron
 # Data folder
