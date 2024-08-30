@@ -27,7 +27,8 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
 
 groundhog.library(pkgs, groundhog.day)
 
-devtools::install_github("koderkow/kaggler")
+# require(devtools)
+# devtools::install_github("mkearney/kaggler")
 require(kaggler)
 
 # groundhog.library("stringi", groundhog.day, force.source.main = TRUE)
@@ -247,16 +248,16 @@ dir(here("Data", "London"), pattern = ".csv")
 # Adding other sources of data, check Kaagle
 # https://www.kaggle.com/datasets/dalreada/all-uk-active-companies-by-sic-and-geolocated
 # Set-up account: https://koderkow.github.io/kaggler/articles/kaggler.html
+# Copy JSON file
+# kgl_auth_file_setup("C:Users/Andre/Downloads/kaggle.json")
 
-# Authenticate with Kaggle
-kgl_auth()
+# Autenticate
+kgl_auth(creds_file = "C:/Users/Andrei_WongE/.kaggle/kaggle.json")
 
-# Download dataset (replace with actual dataset info)
-kgl_datasets_download_all("microsoft/ms-malware-prediction")
-
-# Unzip the downloaded file
-unzip("ms-malware-prediction.zip")
-
+# Download dataset
+kgl_datasets_download_file(owner_dataset = "dalreada/all-uk-active-companies-by-sic-and-geolocated"
+                           , file_name = "AllCompanies2.csv"
+                           , path = here("Data","London"))
 
 saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
@@ -390,7 +391,7 @@ legend(-87.87, 41.73,
 plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 1.25)))
 # The spatial lines object does not include Chicago's city boundaries. Let's add them
 chi <- st_union(lsoa_data_sf)
-plot(as(chi, "Spatial"), lwd = 0.5, add = TRUE)
+plot(as(chi, "Spatial"), lwd = 0.8, add = TRUE)
 # Legend showing the scale of boundary values
 legend(-87.87, 41.73,
        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
@@ -400,6 +401,8 @@ legend(-87.87, 41.73,
 )
 
 png(here("Figures","p_race_african_carib_black_blv.png"), width = 800, height = 600)
+
+dev.off()
 
 # aggregate from line segments to block group level
 lsoa_data_sf_blv <- bind_rows(
@@ -460,7 +463,7 @@ legend(-87.87, 41.73,
 )
 
 png(here("Figures","Boundary_values_areal.png"), width = 800, height = 600)
-
+dev.off()
 
 # Spatial regression ################################################
 f1 <- "crime_violent ~ edge_wombling_race + log(pop) + p_race_black + p_race_hisp +
