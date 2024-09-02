@@ -22,14 +22,17 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "xfun", "remotes", "sp", "spdep", "maptools"
          , "foreach", "doParallel", "parallel", "progress"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
-         , "dplyr", "openxlsx", "MASS", "kaggler"
+         , "dplyr", "openxlsx", "MASS", "recticulate"
          )
 
 groundhog.library(pkgs, groundhog.day)
 
 # require(devtools)
 # devtools::install_github("mkearney/kaggler")
-require(kaggler)
+# require(kaggler) # This does not work
+library(reticulate)
+# IN Terminal: pip install kaglle
+
 
 # groundhog.library("stringi", groundhog.day, force.source.main = TRUE)
 ##ISSUES
@@ -249,15 +252,29 @@ dir(here("Data", "London"), pattern = ".csv")
 # https://www.kaggle.com/datasets/dalreada/all-uk-active-companies-by-sic-and-geolocated
 # Set-up account: https://koderkow.github.io/kaggler/articles/kaggler.html
 # Copy JSON file
-# kgl_auth_file_setup("C:Users/Andre/Downloads/kaggle.json")
+# Place the kaggle.json file in the ~/.kaggle/ directory 
+# THEN py_run_string("import kaggle")
 
-# Autenticate
-kgl_auth(creds_file = "C:/Users/Andrei_WongE/.kaggle/kaggle.json")
+# Python kaggle API
+kaggle <- import("kaggle")
 
 # Download dataset
-kgl_datasets_download_file(owner_dataset = "dalreada/all-uk-active-companies-by-sic-and-geolocated"
-                           , file_name = "AllCompanies2.csv"
-                           , path = here("Data","London"))
+kaggle$api$dataset_download_file("dalreada/all-uk-active-companies-by-sic-and-geolocated",
+                                 "AllCompanies2.csv",
+                                 path = here("Data", "London"))
+
+# Unzip file
+unzip(here("Data", "London", "AllCompanies2.csv.zip")
+      , exdir = here("Data", "London")
+      , overwrite = TRUE
+      , junkpaths = TRUE # remove the defauklt path from the zip file
+)
+
+file.remove(here("Data", "London", "AllCompanies2.csv.zip"))
+
+
+
+
 
 saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
