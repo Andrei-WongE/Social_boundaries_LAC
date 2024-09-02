@@ -272,9 +272,43 @@ unzip(here("Data", "London", "AllCompanies2.csv.zip")
 
 file.remove(here("Data", "London", "AllCompanies2.csv.zip"))
 
+# Read the file
+companies_data <- read.csv(here("Data"
+                           , "London"
+                           , "AllCompanies2.csv")
+                      , header = TRUE
+                      , check.names = FALSE
+) %>% 
+  clean_names(.) 
 
+# Check if all companies have Y:X pairs
+colnames(companies_data)
+dim(companies_data)
 
+companies_data %>% 
+  filter(is.na(latitude) | is.na(longitude)) %>% 
+  nrow()
 
+# Check if all companies have SIC
+companies_data %>% 
+  filter(is.na(sic)) %>% 
+  nrow()
+
+companies_data %>% 
+  filter(sic == "None") %>% 
+  nrow() #[1] 2.5% with empty SIC
+
+companies_data <- companies_data %>% 
+  mutate(sic = ifelse(sic == "None", NA, sic))
+
+# Merge the data with the LSOA boundaries:
+# Convert csv to sf
+points_sf <- st_as_sf(companies_data
+                      , coords = c("longitude", "latitude")
+                      , crs = st_crs(lsoa_data_sf))
+# Spatial join
+lsoa_data_sf<- st_join(lsoa_data_sf, points_sf)
+rm(points_sf)
 
 saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
