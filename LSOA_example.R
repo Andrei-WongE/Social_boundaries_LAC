@@ -23,6 +23,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "foreach", "doParallel", "parallel", "progress"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
          , "dplyr", "openxlsx", "MASS", "recticulate"
+         , "future", "furrr"
          )
 
 groundhog.library(pkgs, groundhog.day)
@@ -307,8 +308,24 @@ points_sf <- st_as_sf(companies_data
                       , coords = c("longitude", "latitude")
                       , crs = st_crs(lsoa_data_sf))
 # Spatial join
-lsoa_data_sf<- st_join(lsoa_data_sf, points_sf)
-rm(points_sf)
+# lsoa_data_sf<- st_join(lsoa_data_sf, points_sf)
+# rm(points_sf)
+
+# Parallelizing spatial join
+plan(multisession, workers = parallel::detectCores() - 1)
+
+# Increase the maximum size of globals
+options(future.globals.maxSize = 500 * 1024^2)  # 500 MB
+
+# Assuming polygons and points_sf are your sf objects
+# Split into chunks of 1000 rows, 3801732/1000 = 3802 chunks/16 cores = 238 chunks per core
+chunks <- split(points_sf, 1:nrow(points_sf) %/% 1000)  
+
+results <- future_map(chunks, ~ st_join(lsoa_data_sf, .x))
+
+merged_data <- do.call(rbind, results)
+
+dim(lsoa_data_sf)
 
 saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
@@ -517,6 +534,36 @@ png(here("Figures","Boundary_values_areal.png"), width = 800, height = 600)
 dev.off()
 
 # Spatial regression ################################################
+new_names2 <- c("working_age_pop"
+               , "all_ages_pop" #CHECK!!!
+               , "lone_parent_hh"
+               , "not_uk_born"
+               , "no_english_main_lang"
+               , "house_price_2010"
+               , "no_adults_in_employment"
+               , "full_time_student"
+               , "unemployment_rate"
+               , "no_qualifications"
+               , "bad_health"
+              )
+
+old_namea2 <- c("mid_year_population_estimates_working_age_2011"
+               , "x2011_census_population_age_structure_all_ages"
+               , "household_composition_lone_parent_household_2011"
+               , "country_of_birth_percent_not_united_kingdom_2011"
+               , "household_language_percent_of_households_where_no_people_aged_16_or_over_have_english_as_a_main_language_2011"
+               , "house_prices_median_price_2010"
+               , "adults_in_employment_percent_of_households_with_no_adults_in_employment_with_dependent_children_2011"
+               , "economic_activity_economically_active_full_time_student_2011"
+               , "economic_activity_unemployment_rate_2011"
+               , "qualifications_percent_no_qualifications_2011"
+               , "health_bad_or_very_bad_health_percent_2011"
+              )
+
+lsoa_data_sf <- lsoa_data_sf %>% 
+  dplyr::rename_with(~ new_names2, all_of(old_names2))
+
+
 f1 <- "crime_violent ~ edge_wombling_race + log(pop) + p_race_black + p_race_hisp +
 p_race_asian + con_disadv + res_instab + immi_con + hhi + age_15_35_male"
 m1 <- glm.nb(f1, data = lsoa_data_sf)
