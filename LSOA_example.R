@@ -22,7 +22,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "xfun", "remotes", "sp", "spdep", "maptools"
          , "foreach", "doParallel", "parallel", "progress"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
-         , "dplyr", "openxlsx", "MASS", "recticulate"
+         , "dplyr", "openxlsx", "MASS", "reticulate"
          , "future", "furrr"
          )
 
@@ -31,9 +31,7 @@ groundhog.library(pkgs, groundhog.day)
 # require(devtools)
 # devtools::install_github("mkearney/kaggler")
 # require(kaggler) # This does not work
-library(reticulate)
 # IN Terminal: pip install kaglle
-
 
 # groundhog.library("stringi", groundhog.day, force.source.main = TRUE)
 ##ISSUES
@@ -259,28 +257,53 @@ dir(here("Data", "London"), pattern = ".csv")
 # Python kaggle API
 kaggle <- import("kaggle")
 
-# Download dataset
-kaggle$api$dataset_download_file("dalreada/all-uk-active-companies-by-sic-and-geolocated",
-                                 "AllCompanies2.csv",
-                                 path = here("Data", "London"))
+# Download all files in dataset [see fifference between '''_download_file and '''_download_files]
+kaggle$api$dataset_download_files("dalreada/all-uk-active-companies-by-sic-and-geolocated"
+                                 , path = here("Data", "London")
+                                 , unzip = TRUE
+                                 )
+#Downloads 2 files: AllCompanies2.csv and SIC.csv
 
-# Unzip file
-unzip(here("Data", "London", "AllCompanies2.csv.zip")
-      , exdir = here("Data", "London")
-      , overwrite = TRUE
-      , junkpaths = TRUE # remove the defauklt path from the zip file
-)
-
-file.remove(here("Data", "London", "AllCompanies2.csv.zip"))
-
-# Read the file
+# Read the files, clean and generate variables
 companies_data <- read.csv(here("Data"
                            , "London"
                            , "AllCompanies2.csv")
                       , header = TRUE
                       , check.names = FALSE
-) %>% 
-  clean_names(.) 
+                      ) %>% 
+                  clean_names(.) %>% 
+                  mutate(sic = ifelse(sic == "None", NA, sic)) %>% 
+                  mutate(sic = as.integer(sic)) %>% 
+                  filter(sic != 99999) %>%
+                  mutate(sic = sprintf("%05d", sic)) %>% 
+                  mutate(incorporation_date = as.Date(incorporation_date, format = "%d/%m/%Y")) %>% 
+                  mutate(firm_age = interval(incorporation_date, Sys.Date()) / years(1)) %>% 
+                  mutate(firm_age = round(firm_age, 0))
+  
+# companies_data %>% 
+#   filter(sic == "None") %>% 
+#   nrow() #[1] 2.5% with empty SIC
+
+#A dormant company is a company that has already been through the company registration 
+# and incorporation process but it does not carry out business activities in a given 
+# period of time. SIC code 99999.
+
+sic_df <- read.csv(here("Data"
+                          , "London"
+                          , "SIC.csv")
+                          , header = TRUE
+                          , check.names = FALSE
+                          ) %>% 
+            clean_names(.) %>% 
+            mutate(sic_code = as.character(sic_code)) %>%
+            mutate(sic_code = sprintf("%05s", sic_code))
+
+# Merge the SIC data with the companies data
+companies_data <- companies_data %>% 
+  left_join(sic_df, by = c("sic"="sic_code"))
+
+dim(companies_data)
+# [1] 3546225       8
 
 # Check if all companies have Y:X pairs
 colnames(companies_data)
@@ -295,35 +318,48 @@ companies_data %>%
   filter(is.na(sic)) %>% 
   nrow()
 
-companies_data %>% 
-  filter(sic == "None") %>% 
-  nrow() #[1] 2.5% with empty SIC
-
-companies_data <- companies_data %>% 
-  mutate(sic = ifelse(sic == "None", NA, sic))
-
 # Merge the data with the LSOA boundaries:
 # Convert csv to sf
 points_sf <- st_as_sf(companies_data
                       , coords = c("longitude", "latitude")
                       , crs = st_crs(lsoa_data_sf))
+
+# Sample a subset of points
+sample_points <- points_sf %>% sample_n(1000)
+
+plot(st_geometry(sample_points), col = "blue", pch = 16, main = "Sample")
+
 # Spatial join
 # lsoa_data_sf<- st_join(lsoa_data_sf, points_sf)
 # rm(points_sf)
 
-# Parallelizing spatial join
-plan(multisession, workers = parallel::detectCores() - 1)
+# # Parallelizing spatial join
+# plan(multisession, workers = parallel::detectCores() - 1)
+# 
+# # Increase the maximum size of globals
+# options(future.globals.maxSize = 500 * 1024^2)  # 500 MB
+# 
+# # Split into chunks of 1000 rows, 3801732/1000 = 3802 chunks/16 cores = 238 chunks per core
+# chunks <- split(points_sf, 1:nrow(points_sf) %/% 1000)  
+# 
+# results <- future_map(chunks, ~ st_join(lsoa_data_sf, .x))
+# 
+# merged_data <- do.call(rbind, results)
 
-# Increase the maximum size of globals
-options(future.globals.maxSize = 500 * 1024^2)  # 500 MB
+# Perform the intersection
+intersections <- st_intersects(lsoa_data_sf, points_sf)
 
-# Assuming polygons and points_sf are your sf objects
-# Split into chunks of 1000 rows, 3801732/1000 = 3802 chunks/16 cores = 238 chunks per core
-chunks <- split(points_sf, 1:nrow(points_sf) %/% 1000)  
+# Create a data frame from the intersections
+intersect_df <- data.frame(
+  polygon_id = rep(seq_along(intersections), lengths(intersections)),
+  point_id = unlist(intersections)
+)
 
-results <- future_map(chunks, ~ st_join(lsoa_data_sf, .x))
+# Merge the data based on the intersections
+merged_data <- lsoa_data_sf %>%
+  left_join(intersect_df, by = c("row.names" = "polygon_id")) %>%
+  left_join(points_sf, by = c("point_id" = "row.names"))
 
-merged_data <- do.call(rbind, results)
 
 dim(lsoa_data_sf)
 
