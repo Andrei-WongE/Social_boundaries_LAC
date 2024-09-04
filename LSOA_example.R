@@ -27,6 +27,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          )
 
 groundhog.library(pkgs, groundhog.day)
+library(parallel) # Core package, so no install
 
 # require(devtools)
 # devtools::install_github("mkearney/kaggler")
@@ -325,9 +326,9 @@ points_sf <- st_as_sf(companies_data
                       , crs = st_crs(lsoa_data_sf))
 
 # Sample a subset of points
-sample_points <- points_sf %>% sample_n(1000)
-
-plot(st_geometry(sample_points), col = "blue", pch = 16, main = "Sample")
+# sample_points <- points_sf %>% sample_n(1000)
+# 
+# plot(st_geometry(sample_points), col = "blue", pch = 16, main = "Sample")
 
 # Spatial join
 # lsoa_data_sf<- st_join(lsoa_data_sf, points_sf)
@@ -339,26 +340,42 @@ plot(st_geometry(sample_points), col = "blue", pch = 16, main = "Sample")
 # # Increase the maximum size of globals
 # options(future.globals.maxSize = 500 * 1024^2)  # 500 MB
 # 
-# # Split into chunks of 1000 rows, 3801732/1000 = 3802 chunks/16 cores = 238 chunks per core
+# # Split into chunks of 1000 rows, 3801732/1000 = 3802 chunks/11 cores = 346 chunks per core
 # chunks <- split(points_sf, 1:nrow(points_sf) %/% 1000)  
 # 
 # results <- future_map(chunks, ~ st_join(lsoa_data_sf, .x))
 # 
 # merged_data <- do.call(rbind, results)
 
-# Perform the intersection
-intersections <- st_intersects(lsoa_data_sf, points_sf)
+# Perform the intersection using parallel processing
+
+# Set up parallel cluster
+cl <- makeCluster(detectCores() - 1)
+
+intersections <- parLapply(cl, 1:nrow(lsoa_data_sf), function(i) {
+  st_intersects(lsoa_data_sf[i, ], points_sf)
+})
+
+# Stop the cluster
+stopCluster(cl)
+
+# saveRDS(lsoa_data_sf, here("Data","London", "intersections.rds"))
+# intersections <- readRDS(here("Data","London", "intersections.rds"))
 
 # Create a data frame from the intersections
 intersect_df <- data.frame(
   polygon_id = rep(seq_along(intersections), lengths(intersections)),
   point_id = unlist(intersections)
-)
+) 
+  # mutate(point_id = as.character(point_id)) %>% 
+  # mutate(polygon_id = as.character(polygon_id)) 
+
+lsoa_data_sf$id <- seq_len(nrow(lsoa_data_sf))
 
 # Merge the data based on the intersections
 merged_data <- lsoa_data_sf %>%
-  left_join(intersect_df, by = c("row.names" = "polygon_id")) %>%
-  left_join(points_sf, by = c("point_id" = "row.names"))
+  left_join(intersect_df, by = c("id" = "polygon_id")) %>%
+  st_join(points_sf, join = st_intersects)
 
 
 dim(lsoa_data_sf)
@@ -440,7 +457,6 @@ rm(filtered_data)
 sum(st_is_empty(lsoa_data_sf))
 # [1] 0
 # chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
-
 
 #FUNCTION ERRORS!!!!!
 
