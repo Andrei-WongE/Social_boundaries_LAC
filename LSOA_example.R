@@ -47,11 +47,11 @@ packageVersion("openxlsx")
 # dir.create(here("Data", "London"), showWarnings = FALSE)
 download.file("https://data.london.gov.uk/download/statistical-gis-boundary-files-london/9ba8c833-6370-4b11-abdc-314aa020d5e0/statistical-gis-boundaries-london.zip"
               , "london_boundaries.zip")
-
-unzip("london_boundaries.zip", exdir = here("Data", "London")
-      , overwrite = TRUE
-      , junkpaths = TRUE # remove the defauklt path from the zip file
-      )
+  
+  unzip("london_boundaries.zip", exdir = here("Data", "London")
+        , overwrite = TRUE
+        , junkpaths = TRUE # remove the defauklt path from the zip file
+        )
   
 london <- read_sf(here("Data", "London","LSOA_2011_London_gen_MHW.shp"))
 
@@ -310,6 +310,7 @@ dim(companies_data)
 colnames(companies_data)
 dim(companies_data)
 
+
 companies_data %>% 
   filter(is.na(latitude) | is.na(longitude)) %>% 
   nrow()
@@ -324,6 +325,9 @@ companies_data %>%
 points_sf <- st_as_sf(companies_data
                       , coords = c("longitude", "latitude")
                       , crs = st_crs(lsoa_data_sf))
+
+points_sf$points_id <- seq_len(nrow(points_sf))
+lsoa_data_sf$polygon_id <- seq_len(nrow(lsoa_data_sf))
 
 # Sample a subset of points
 # sample_points <- points_sf %>% sample_n(1000)
@@ -352,31 +356,46 @@ points_sf <- st_as_sf(companies_data
 # Set up parallel cluster
 cl <- makeCluster(detectCores() - 1)
 
+# Export objects to cluster
+clusterExport(cl, c("lsoa_data_sf", "points_sf"))
+
 intersections <- parLapply(cl, 1:nrow(lsoa_data_sf), function(i) {
-  st_intersects(lsoa_data_sf[i, ], points_sf)
+  sf::st_intersects(lsoa_data_sf[i, ], points_sf)
 })
 
 # Stop the cluster
 stopCluster(cl)
 
-# saveRDS(lsoa_data_sf, here("Data","London", "intersections.rds"))
+# saveRDS(intersections, here("Data","London", "intersections.rds"))
 # intersections <- readRDS(here("Data","London", "intersections.rds"))
 
 # Create a data frame from the intersections
-intersect_df <- data.frame(
-  polygon_id = rep(seq_along(intersections), lengths(intersections)),
-  point_id = unlist(intersections)
-) 
-  # mutate(point_id = as.character(point_id)) %>% 
-  # mutate(polygon_id = as.character(polygon_id)) 
+#unlist() might be flattening the list in an unexpected way, so use sapply() instead
 
-lsoa_data_sf$id <- seq_len(nrow(lsoa_data_sf))
+polygon_ids <- integer(0)
+point_ids <- integer(0)
+
+for (i in seq_along(intersections)) {
+  if (length(intersections[[i]]) > 0) {
+    polygon_ids <- c(polygon_ids, rep(i, length(intersections[[i]])))
+    point_ids <- c(point_ids, intersections[[i]])
+  }
+}
+
+# Create the data frame
+intersect_df <- data.frame(
+  polygon_id = polygon_ids,
+  point_id = point_ids
+)
+
+
+# Ensure the CRS are the same
+st_crs(lsoa_data_sf)==st_crs(points_sf)
 
 # Merge the data based on the intersections
-merged_data <- lsoa_data_sf %>%
+lsoa_data_sf <- lsoa_data_sf %>%
   left_join(intersect_df, by = c("id" = "polygon_id")) %>%
   st_join(points_sf, join = st_intersects)
-
 
 dim(lsoa_data_sf)
 
