@@ -23,7 +23,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "foreach", "doParallel", "parallel", "progress"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
          , "dplyr", "openxlsx", "MASS", "reticulate"
-         , "future", "furrr"
+         , "future", "furrr", "data.table","leaflet"
          )
 
 groundhog.library(pkgs, groundhog.day)
@@ -353,54 +353,157 @@ lsoa_data_sf$polygon_id <- seq_len(nrow(lsoa_data_sf))
 
 # Perform the intersection using parallel processing
 
-# Set up parallel cluster
-cl <- makeCluster(detectCores() - 1)
+  # # Set up parallel cluster
+  # cl <- makeCluster(detectCores() - 1)
+  # 
+  # # Export objects to cluster
+  # clusterExport(cl, c("lsoa_data_sf", "points_sf"))
+  # 
+  # intersections <- parLapply(cl, 1:nrow(lsoa_data_sf), function(i) {
+  #   sf::st_intersects(lsoa_data_sf[i, ], points_sf)
+  # })
+  # 
+  # # Stop the cluster
+  # stopCluster(cl)
+  # 
+  # # saveRDS(intersections, here("Data","London", "intersections.rds"))
+  # # intersections <- readRDS(here("Data","London", "intersections.rds"))
+  # 
+  # # Create a data frame from the intersections
+  # #unlist() might be flattening the list in an unexpected way, so use sapply() instead
+  # 
+  # polygon_ids <- integer(0)
+  # point_ids <- integer(0)
+  # 
+  # for (i in seq_along(intersections)) {
+  #   if (length(intersections[[i]]) > 0) {
+  #     polygon_ids <- c(polygon_ids, rep(i, length(intersections[[i]])))
+  #     point_ids <- c(point_ids, intersections[[i]])
+  #   }
+  # }
+  # 
+  # # Create the data frame
+  # intersect_df <- data.frame(
+  #   polygon_id = polygon_ids,
+  #   point_id = point_ids
+  # )
+  # 
+  # 
+  # # Ensure the CRS are the same
+  # st_crs(lsoa_data_sf)==st_crs(points_sf)
+  # 
+  # # Merge the data based on the intersections
+  # lsoa_data_sf <- lsoa_data_sf %>%
+  #   left_join(intersect_df, by = c("id" = "polygon_id")) %>%
+  #   st_join(points_sf, join = st_intersects)
+  # 
+  # dim(lsoa_data_sf)
 
-# Export objects to cluster
-clusterExport(cl, c("lsoa_data_sf", "points_sf"))
+# Set up parallel processing
+num_cores <- parallel::detectCores() - 1  # Leave one core free for system processes
+cl <- makeCluster(num_cores)
 
-intersections <- parLapply(cl, 1:nrow(lsoa_data_sf), function(i) {
-  sf::st_intersects(lsoa_data_sf[i, ], points_sf)
+# Export necessary packages and functions to the cluster
+clusterEvalQ(cl, {
+  library(sf)
+  library(dplyr)
 })
 
-# Stop the cluster
-stopCluster(cl)
-
-# saveRDS(intersections, here("Data","London", "intersections.rds"))
-# intersections <- readRDS(here("Data","London", "intersections.rds"))
-
-# Create a data frame from the intersections
-#unlist() might be flattening the list in an unexpected way, so use sapply() instead
-
-polygon_ids <- integer(0)
-point_ids <- integer(0)
-
-for (i in seq_along(intersections)) {
-  if (length(intersections[[i]]) > 0) {
-    polygon_ids <- c(polygon_ids, rep(i, length(intersections[[i]])))
-    point_ids <- c(point_ids, intersections[[i]])
-  }
+# Function to process chunks
+process_chunk <- function(chunk, polygons) {
+  # Use st_intersects for efficient spatial join
+  intersects <- sf::st_intersects(chunk, polygons)
+  
+  # Assign polygon IDs to points
+  chunk$matched_polygon_id <- sapply(intersects, function(x) {
+    if (length(x) > 0) polygons$polygon_id[x[1]] else NA
+  })
+  
+  # Join polygon attributes
+  chunk <- left_join(chunk, 
+                     as.data.frame(polygons) %>% select(-geometry),
+                     by = c("matched_polygon_id" = "polygon_id"))
+  
+  return(chunk)
 }
 
-# Create the data frame
-intersect_df <- data.frame(
-  polygon_id = polygon_ids,
-  point_id = point_ids
-)
+# Main processing function
+spatial_join <- function(points_sf, lsoa_data_sf, chunk_size = 100000) {
+  # Ensure validity of polygons
+  lsoa_data_sf <- st_make_valid(lsoa_data_sf)
+  
+  # Split points into chunks
+  point_list <- split(points_sf, ceiling(seq_len(nrow(points_sf))/chunk_size))
+  
+  # Export large objects to the cluster
+  clusterExport(cl, c("lsoa_data_sf", "process_chunk"))
+  
+  # Process chunks in parallel
+  results <- parLapply(cl, point_list, process_chunk, polygons = lsoa_data_sf)
+  
+  # Combine results
+  points_with_polygon <- do.call(rbind, results)
+  
+  return(points_with_polygon)
+}
 
+# Check points_id and polygon_id are present
+if (!"points_id" %in% names(points_sf)) stop("points_sf must have a 'points_id' column")
+if (!"polygon_id" %in% names(lsoa_data_sf)) stop("lsoa_data_sf must have a 'polygon_id' column")
 
-# Ensure the CRS are the same
-st_crs(lsoa_data_sf)==st_crs(points_sf)
+# Perform the efficient spatial join
+points_with_polygon <- spatial_join(points_sf, lsoa_data_sf)
 
-# Merge the data based on the intersections
-lsoa_data_sf <- lsoa_data_sf %>%
-  left_join(intersect_df, by = c("id" = "polygon_id")) %>%
-  st_join(points_sf, join = st_intersects)
+# Clean up
+stopCluster(cl)
+gc()
 
-dim(lsoa_data_sf)
+# Create a color palette for polygons
+pal <- colorFactor(palette = "viridis", domain = lsoa_data_sf$polygon_id)
 
-saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
-lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+# Mapping the map
+map <- leaflet() %>%
+  addTiles() %>%  # Add default OpenStreetMap tiles
+  addPolygons(data = lsoa_data_sf, 
+              fillColor = ~pal(polygon_id),
+              fillOpacity = 0.7, 
+              color = "white", 
+              weight = 1,
+              label = ~as.character(polygon_id),
+              labelOptions = labelOptions(noHide = FALSE, direction = "auto")) %>%
+  addCircleMarkers(data = points_with_polygon, 
+                   radius = 2, 
+                   color = "red", 
+                   fillOpacity = 0.7,
+                   label = ~as.character(points_id),
+                   labelOptions = labelOptions(noHide = FALSE, direction = "auto"))
+
+# Add legend
+map <- map %>% addLegend(pal = pal, values = lsoa_data_sf$polygon_id, 
+                         title = "Polygon ID", position = "bottomright")
+
+map
+
+# Save map
+dir.create("Maps")
+# install.packages("webshot")
+# webshot::install_phantomjs()
+mapview::mapshot(map, file = here("Maps", "lsoa_points_map.png"))
+
+###ERROR!!!
+#  Windows exception, code 0xc0000005.
+# PhantomJS has crashed. Please read the bug reporting guide at
+# <http://phantomjs.org/bug-reporting.html> and file a bug report.
+# Error in (function (url = NULL, file = "webshot.png", vwidth = 992, vheight = 744,  : 
+#                       webshot.js returned failure value: -1073741819
+
+# Summary of the join results
+cat("Points assigned to polygons:", sum(!is.na(points_with_polygon$matched_polygon_id)), "\n")
+cat("Points not assigned to any polygon:", sum(is.na(points_with_polygon$matched_polygon_id)), "\n")
+
+# Save the resulting dbs
+saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
+points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
 
 #Census data https://www.nomisweb.co.uk/census/2011/bulk
 # Job density https://www.nomisweb.co.uk/datasets/jd
