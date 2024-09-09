@@ -429,13 +429,14 @@ process_chunk <- function(chunk, polygons) {
 
 # Main processing function
 spatial_join <- function(points_sf, lsoa_data_sf, chunk_size = 100000) {
+  
   # Ensure validity of polygons
   lsoa_data_sf <- st_make_valid(lsoa_data_sf)
   
   # Split points into chunks
   point_list <- split(points_sf, ceiling(seq_len(nrow(points_sf))/chunk_size))
   
-  # Export large objects to the cluster
+  # Export large objects to the cluster workers
   clusterExport(cl, c("lsoa_data_sf", "process_chunk"))
   
   # Process chunks in parallel
@@ -454,9 +455,15 @@ if (!"polygon_id" %in% names(lsoa_data_sf)) stop("lsoa_data_sf must have a 'poly
 # Perform the efficient spatial join
 points_with_polygon <- spatial_join(points_sf, lsoa_data_sf)
 
-# Clean up
+# Clean up and save
 stopCluster(cl)
 gc()
+
+# Save the resulting dbs
+saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
+
+points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
 
 # Create a color palette for polygons
 pal <- colorFactor(palette = "viridis", domain = lsoa_data_sf$polygon_id)
@@ -475,35 +482,44 @@ map <- leaflet() %>%
                    radius = 2, 
                    color = "red", 
                    fillOpacity = 0.7,
-                   label = ~as.character(points_id),
+                   label = ~paste("Point ID:"
+                                         , as.character(points_id)
+                                         , "| Type:", as.character(description)),
                    labelOptions = labelOptions(noHide = FALSE, direction = "auto"))
 
 # Add legend
 map <- map %>% addLegend(pal = pal, values = lsoa_data_sf$polygon_id, 
                          title = "Polygon ID", position = "bottomright")
 
-map
+# map
 
 # Save map
 dir.create("Maps")
 # install.packages("webshot")
 # webshot::install_phantomjs()
-mapview::mapshot(map, file = here("Maps", "lsoa_points_map.png"))
 
-###ERROR!!!
+# mapview::mapshot(map, file = here("Maps", "lsoa_points_map.png"))
+
+###ERROR!!! NO EFFING IDEA WHY
 #  Windows exception, code 0xc0000005.
 # PhantomJS has crashed. Please read the bug reporting guide at
 # <http://phantomjs.org/bug-reporting.html> and file a bug report.
 # Error in (function (url = NULL, file = "webshot.png", vwidth = 992, vheight = 744,  : 
 #                       webshot.js returned failure value: -1073741819
+###SOLUTION: export as html file
+
+# Save as an HTML file
+require(htmlwidgets)
+saveWidget(map
+           , file = here("Maps", "lsoa_points_map.html")
+           , selfcontained = TRUE
+           , title = "London companies and LSOA Polygons"
+           )
 
 # Summary of the join results
 cat("Points assigned to polygons:", sum(!is.na(points_with_polygon$matched_polygon_id)), "\n")
 cat("Points not assigned to any polygon:", sum(is.na(points_with_polygon$matched_polygon_id)), "\n")
-
-# Save the resulting dbs
-saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
-points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
+##CHECK!!!!!! Lots of points not assigned to any polygon!!!!
 
 #Census data https://www.nomisweb.co.uk/census/2011/bulk
 # Job density https://www.nomisweb.co.uk/datasets/jd
@@ -572,7 +588,7 @@ table(new_names)
 filtered_data <- lsoa_data_sf %>%
   filter(if_any(all_of(vars), all_vars(. >= 1)))
 
-View(filtered_data[vars])
+View(filtered_data[vars]) # Should be an empty table
 rm(filtered_data)
 
 # #sp do not support empty geometries
@@ -721,7 +737,7 @@ new_names2 <- c("working_age_pop"
                , "bad_health"
               )
 
-old_namea2 <- c("mid_year_population_estimates_working_age_2011"
+old_names2 <- c("mid_year_population_estimates_working_age_2011"
                , "x2011_census_population_age_structure_all_ages"
                , "household_composition_lone_parent_household_2011"
                , "country_of_birth_percent_not_united_kingdom_2011"
@@ -737,8 +753,48 @@ old_namea2 <- c("mid_year_population_estimates_working_age_2011"
 lsoa_data_sf <- lsoa_data_sf %>% 
   dplyr::rename_with(~ new_names2, all_of(old_names2))
 
+# Create variable with count of companies
 
-f1 <- "crime_violent ~ edge_wombling_race + log(pop) + p_race_black + p_race_hisp +
-p_race_asian + con_disadv + res_instab + immi_con + hhi + age_15_35_male"
+# Legewie (2018) derives two measures from the boundary values that are appropriate for multi-group settings. 
+# Change this as this is not correct
+
+chi_ct <- chi_ct %>%
+  mutate(
+    # composite measure
+    edge_wombling_race = matrixStats::rowMaxs(
+      cbind(p_race_white_blv
+            ,p_race_mixed_blv
+            ,p_race_asian_brit_blv
+            ,p_race_african_carib_black_blv
+            ,p_race_bame_blv
+            )
+      , na.rm = FALSE
+                                          ),
+    # pairwise boundary measures
+     edge_race_wm    = p_race_white_blv * p_race_mixed_blv
+    ,edge_race_wab   = p_race_white_blv * p_race_asian_brit_blv
+    ,edge_race_wafc  = p_race_white_blv * p_race_african_carib_black_blv
+    ,edge_race_wb    = p_race_white_blv * p_race_bame_blv
+    ,edge_race_mab   = p_race_mixed_blv * p_race_asian_brit_blv
+    ,edge_race_mafc  = p_race_mixed_blv * p_race_african_carib_black_blv
+    ,edge_race_wb    = p_race_mixed_blv * p_race_bame_blv
+    ,edge_race_abafc = p_race_asian_brit_blv * p_race_african_carib_black_blv
+    ,edge_race_abb   = p_race_asian_brit_blv * p_race_bame_blv
+    ,edge_race_afcb  = p_race_african_carib_black_blv * p_race_bame_blv
+  )
+
+
+# Run regressions
+# Basic regression
+f1 <- "company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white +
+               p_race_mixed + p_race_asian_brit  + p_race_african_carib_black +
+               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 + 
+               bad_health + working_age_pop"
 m1 <- glm.nb(f1, data = lsoa_data_sf)
 stargazer(m1, type = "text", no.space = TRUE, star.cutoffs = c(0.05, 0.01, 0.001))
+
+# GWR
+
+
+# SGWR
+
