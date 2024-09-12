@@ -807,7 +807,7 @@ lsoa_data_sf <- lsoa_data_sf %>%
 
 # Run regressions ----
 # See https://github.com/cran-task-views/Spatial/blob/main/Spatial.md
-# Basic regression
+## Basic regression
 f1 <- "company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white +
                p_race_mixed + p_race_asian_brit  + p_race_african_carib_black +
                p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 + 
@@ -846,9 +846,13 @@ stargazer(m2, m3
           , out = here("Output", "regression_tablef2f3.txt")
           )
 
-# GWR or spatially varying coefficient (SVC) models?
+## GWR or spatially varying coefficient (SVC) models?
+# CAVEAT:collinearity tends to be problematic in GWR models, See Comber et al. 2022
+# https://onlinelibrary.wiley.com/doi/10.1111/gean.12316
+
 #r pkg("varycoef") and r pkg("spBayes")
 #r pkg("gwrr") pkg("GWmodel") pkg("spgwr")
+# Also fastgwr https://github.com/Ziqi-Li/FastGWR in Python
 library(spgwr)
 
 # Fixed Bandwidth
@@ -883,7 +887,6 @@ utla_shp$fmb_localR2 <- fb_gwr_out$localR2
 
 # mapping results
 # Local R2
-legend_title = expression("Fixed: Local R2")
 map_fbgwr1 = tm_shape(utla_shp) +
   tm_fill(col = "fmb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
   tm_borders(col = "white", lwd = .1)  + # add borders
@@ -892,6 +895,7 @@ map_fbgwr1 = tm_shape(utla_shp) +
   tm_layout(bg.color = "white") # change background colour
 map_fbgwr1 + tm_shape(reg_shp) + # add region boundaries
   tm_borders(col = "white", lwd = .5) # add borders
+legend_title = expression("Fixed: Local R2")
 
 # find optimal kernel bandwidth using cross validation
 abw <- gwr.sel(eq1, 
@@ -915,5 +919,27 @@ abw <- gwr.sel(eq1,
 # view selected bandwidth
 abw
 
+# Assessing model fit
+# write gwr output into a data frame
+ab_gwr_out <- as.data.frame(ab_gwr$SDF)
+
+utla_shp$amb_ethnic <- ab_gwr_out$ethnic
+utla_shp$amb_lt_illness <- ab_gwr_out$lt_illness
+utla_shp$amb_localR2 <- ab_gwr_out$localR2
+
+# Mapping results
+# Local R2
+map_abgwr1 = tm_shape(utla_shp) +
+  tm_fill(col = "amb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
+  tm_borders(col = "white", lwd = .1)  + # add borders
+  tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
+  tm_scale_bar(breaks = c(0,1,2), text.size = 0.7, position =  c("center", "bottom")) + # add scale bar
+  tm_layout(bg.color = "white") # change background colour
+map_abgwr1 + tm_shape(reg_shp) + # add region boundaries
+  tm_borders(col = "white", lwd = .5) # add borders
+legend_title = expression("Adaptive: Local R2")
+
 # SGWR
+# See: https://github.com/Lessani252/SGWR
+
 
