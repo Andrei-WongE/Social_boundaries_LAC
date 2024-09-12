@@ -24,6 +24,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
          , "dplyr", "openxlsx", "MASS", "reticulate"
          , "future", "furrr", "data.table","leaflet"
+         , "spgwr"
          )
 
 groundhog.library(pkgs, groundhog.day)
@@ -462,6 +463,7 @@ gc()
 # Save the resulting dbs
 saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
 
+# Starting point with saved data ----
 points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
 
@@ -647,7 +649,7 @@ legend(-87.87, 41.73,
 
 # Plot 2: Boundaries
 plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 1.25)))
-# The spatial lines object does not include Chicago's city boundaries. Let's add them
+# The spatial lines object does not include city boundaries. Let's add them
 chi <- st_union(lsoa_data_sf)
 plot(as(chi, "Spatial"), lwd = 0.8, add = TRUE)
 # Legend showing the scale of boundary values
@@ -673,7 +675,7 @@ lsoa_data_sf_blv <- bind_rows(
   summarise_at(vars(ends_with("blv")), max, na.rm = TRUE) %>% 
   janitor::clean_names()
 
-lsoa_data_sf_boundaries <- bind_cols(lsoa_data_sf
+lsoa_data_sf <- bind_cols(lsoa_data_sf
                                      , dplyr::select(lsoa_data_sf_blv
                                      , -i)
                                     )
@@ -753,12 +755,32 @@ old_names2 <- c("mid_year_population_estimates_working_age_2011"
 lsoa_data_sf <- lsoa_data_sf %>% 
   dplyr::rename_with(~ new_names2, all_of(old_names2))
 
-# Create variable with count of companies
+# Create variable with count of companies, using matched id
+# Assuming that lsoa_data_sf$polygon_id matches points_with_polygon$matched_polygon_id
+# The coalesce() function at the end ensures that polygons with no matching points get a count of 0 instead of NA
+
+# Count the points in each polygon using the matching IDs
+library(sf)
+library(dplyr)
+
+# Assuming lsoa_data_sf and points_with_polygon are sf objects
+
+# Convert points_with_polygon to a regular data frame for counting
+points_df <- points_with_polygon %>%
+  st_drop_geometry() %>%
+  group_by(matched_polygon_id) %>%
+  summarise(company_count = n())
+
+# Join count data to the sf object
+lsoa_data_sf <- lsoa_data_sf %>%
+  left_join(points_df, by = c("polygon_id" = "matched_polygon_id")) %>%
+  mutate(company_count = coalesce(company_count, 0))  # Replace NA with 0 for polygons with no points
+
 
 # Legewie (2018) derives two measures from the boundary values that are appropriate for multi-group settings. 
 # Change this as this is not correct
 
-chi_ct <- chi_ct %>%
+lsoa_data_sf <- lsoa_data_sf %>%
   mutate(
     # composite measure
     edge_wombling_race = matrixStats::rowMaxs(
@@ -783,18 +805,115 @@ chi_ct <- chi_ct %>%
     ,edge_race_afcb  = p_race_african_carib_black_blv * p_race_bame_blv
   )
 
-
-# Run regressions
+# Run regressions ----
+# See https://github.com/cran-task-views/Spatial/blob/main/Spatial.md
 # Basic regression
 f1 <- "company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white +
                p_race_mixed + p_race_asian_brit  + p_race_african_carib_black +
                p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 + 
                bad_health + working_age_pop"
 m1 <- glm.nb(f1, data = lsoa_data_sf)
-stargazer(m1, type = "text", no.space = TRUE, star.cutoffs = c(0.05, 0.01, 0.001))
 
-# GWR
+stargazer(m1
+          , type = "text"
+          , no.space = TRUE
+          , star.cutoffs = c(0.05, 0.01, 0.001)
+          , out = here("Output", "regression_tablef1.txt")
+          )
 
+# Compare the composite measure to the pairwise boundary measures
+f2 <- "company_count ~ edge_wombling_race +log(all_ages_pop) + p_race_white  + 
+               p_race_mixed + p_race_asian_brit  + p_race_african_carib_black + 
+               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 +  
+               bad_health + working_age_pop"
+
+f3 <- "company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race_wb +     
+                          edge_race_mab + edge_race_mafc + edge_race_wb + edge_race_abafc + 
+                          edge_race_abb + edge_race_afcb + log(all_ages_pop) +  
+                          p_race_white + p_race_mixed + p_race_asian_brit +  
+                          p_race_african_carib_black + p_race_bame +  
+                          lone_parent_hh + not_uk_born + house_price_2010 +  
+                          bad_health + working_age_pop"
+
+m2 <- glm.nb(f2, data = lsoa_data_sf)
+m3 <- glm.nb(f3, data = lsoa_data_sf)
+
+stargazer(m2, m3
+          , type = "text"
+          , no.space = TRUE
+          , star.cutoffs = c(0.05, 0.01, 0.001)
+          , column.labels = c("Composite measure", "Pairwise boundaries")
+          , out = here("Output", "regression_tablef2f3.txt")
+          )
+
+# GWR or spatially varying coefficient (SVC) models?
+#r pkg("varycoef") and r pkg("spBayes")
+#r pkg("gwrr") pkg("GWmodel") pkg("spgwr")
+library(spgwr)
+
+# Fixed Bandwidth
+# find optimal kernel bandwidth using cross validation
+fbw <- gwr.sel(eq1, 
+               data = utla_shp, 
+               coords=cbind( long, lat),
+               longlat = TRUE,
+               adapt=FALSE, 
+               gweight = gwr.Gauss, 
+               verbose = FALSE)
+
+# view selected bandwidth
+fbw
+
+# fit a gwr based on fixed bandwidth
+fb_gwr <- gwr(eq1, 
+              data = utla_shp,
+              coords=cbind( long, lat),
+              longlat = TRUE,
+              bandwidth = fbw, 
+              gweight = gwr.Gauss,
+              hatmatrix=TRUE, 
+              se.fit=TRUE)
+
+fb_gwr
+
+# write gwr output into a data frame
+fb_gwr_out <- as.data.frame(fb_gwr$SDF)
+
+utla_shp$fmb_localR2 <- fb_gwr_out$localR2
+
+# mapping results
+# Local R2
+legend_title = expression("Fixed: Local R2")
+map_fbgwr1 = tm_shape(utla_shp) +
+  tm_fill(col = "fmb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
+  tm_borders(col = "white", lwd = .1)  + # add borders
+  tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
+  tm_scale_bar(breaks = c(0,1,2), text.size = 0.7, position =  c("center", "bottom")) + # add scale bar
+  tm_layout(bg.color = "white") # change background colour
+map_fbgwr1 + tm_shape(reg_shp) + # add region boundaries
+  tm_borders(col = "white", lwd = .5) # add borders
+
+# find optimal kernel bandwidth using cross validation
+abw <- gwr.sel(eq1, 
+               data = utla_shp, 
+               coords=cbind( long, lat),
+               longlat = TRUE,
+               adapt = TRUE, 
+               gweight = gwr.Gauss, 
+               verbose = FALSE)
+
+# Adaptive bandwidth
+# find optimal kernel bandwidth using cross validation
+abw <- gwr.sel(eq1, 
+               data = utla_shp, 
+               coords=cbind( long, lat),
+               longlat = TRUE,
+               adapt = TRUE, 
+               gweight = gwr.Gauss, 
+               verbose = FALSE)
+
+# view selected bandwidth
+abw
 
 # SGWR
 
