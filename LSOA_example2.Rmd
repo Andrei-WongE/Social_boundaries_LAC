@@ -1,0 +1,941 @@
+---
+output:
+  word_document: 
+    toc: true
+  html_document: default
+---
+Installing required packages
+
+```{r}
+if (!require("pacman")|!require("groundhog")| !require("here")) {
+  
+  install.packages(c("pacman","groundhog", "here"))
+}
+
+
+library("pacman")
+library("here")
+library("groundhog")
+```
+
+install.packages("groundhog")
+
+```{r}
+library("groundhog")
+set.groundhog.folder(here("groundhog_library"))
+groundhog.day = "2024-04-25" #'"2020-05-12"
+```
+
+Dowloaded fromn https://github.com/CredibilityLab/groundhog
+
+```{r}
+pkgs = c("dplyr", "tidyverse", "janitor", "sf"
+         , "tmap", "devtools", "renv", "Hmisc", "ggplot2"
+         , "xfun", "remotes", "sp", "spdep", "maptools"
+         , "foreach", "doParallel", "parallel", "progress"
+         , "doSNOW", "purrr", "patchwork", "rmapshaper"
+         , "dplyr", "openxlsx", "MASS", "reticulate"
+         , "future", "furrr", "data.table","leaflet"
+         , "spgwr"
+         )
+```
+
+```{r}
+groundhog.library(pkgs, groundhog.day)
+library(parallel) # Core package, so no install
+
+packageVersion("openxlsx")
+```
+```{r setup, include =  FALSE}
+
+library(knitr)
+opts_chunk$set(cache = TRUE)
+
+```
+Get LSOA boundaries:----
+from: https://data.london.gov.uk/dataset/statistical-gis-boundary-files-london
+dir.create(here("Data", "London"), showWarnings = FALSE)
+
+```{r}
+download.file("https://data.london.gov.uk/download/statistical-gis-boundary-files-london/9ba8c833-6370-4b11-abdc-314aa020d5e0/statistical-gis-boundaries-london.zip"
+              , "london_boundaries.zip")
+  
+  unzip("london_boundaries.zip", exdir = here("Data", "London")
+        , overwrite = TRUE
+        , junkpaths = TRUE #' remove the defauklt path from the zip file
+        )
+  
+london <- read_sf(here("Data", "London","LSOA_2011_London_gen_MHW.shp"))
+
+plot(st_geometry(london))
+london
+
+london <- st_transform(london, crs = 4326)
+```
+
+Simplify shapes
+
+```{r}
+london2 <- ms_simplify(london)
+
+neighb <- spdep::poly2nb( london2
+                         , queen=TRUE
+                       #' , snap=eps
+)
+
+coords <- st_coordinates(st_centroid(st_geometry(london2)))
+
+plot(neighb, coords, col="grey", add = FALSE)
+```
+
+Get additional data compatible with LSOA boundaries:----
+from: https://www.data.gov.uk/dataset/ffd9f142-6b70-412e-ab30-6442ff37f685/lsoa-atlas
+
+```{r}
+download.file("https://data.london.gov.uk/download/lsoa-atlas/0193f884-2ccd-49c2-968e-28aa3b1c480d/lsoa-data.csv"
+              , destfile = here("Data"
+                                , "London"
+                                , "LSOA_Atlas.csv")
+              )
+```
+
+Read the file
+
+```{r}
+lsoa_data <- read.csv(here("Data"
+                             , "London"
+                             , "LSOA_Atlas.csv")
+                      , header = TRUE
+                      , check.names = FALSE #' Col.names with numerals
+                      ) %>% 
+            dplyr::rename_at(1, ~'LSOA11CD')
+
+lsoa_data[rowSums(is.na(lsoa_data)) != ncol(lsoa_data), ]
+```
+
+Visual inspection of the data shows that the last two rows are not useful
+
+```{r}
+lsoa_data <- lsoa_data[1:(nrow(lsoa_data) - 2), ]
+data.table::setDT(lsoa_data)
+nrow(lsoa_data)
+```
+
+[1] 4835
+Cleaning names
+
+```{r}
+lsoa_data <- clean_names(lsoa_data) %>% 
+  dplyr::rename_at(1, ~'LSOA11CD')
+
+colnames(lsoa_data)
+```
+
+Merge the data with the LSOA boundaries: ----
+
+```{r}
+lsoa_data_sf <- merge(london2, lsoa_data, by.x = "LSOA11CD", by.y = "LSOA11CD")
+
+table(duplicated(lsoa_data_sf$LSOA11CD))
+
+lsoa_nbs <- spdep::poly2nb(lsoa_data_sf)
+
+no_neighbors <- vapply(lsoa_nbs, function(x) identical(x, 0L), logical(1))
+table(no_neighbors)
+```
+
+restrict to connected map
+
+```{r}
+lsoa_data_sf <- lsoa_data_sf[!no_neighbors,]
+plot(st_geometry(lsoa_data_sf))
+```
+
+Leaving relevant variables
+
+```{r}
+lsoa_data_sf <- lsoa_data_sf %>% 
+  dplyr::select(  "LSOA11CD"
+                , "POPDEN"
+                , "names"
+                , "mid_year_population_estimates_all_ages_2011"
+                , "mid_year_population_estimates_aged_16_29_2011"
+                , "mid_year_population_estimates_aged_30_44_2011"
+                , "mid_year_population_estimates_aged_45_64_2011"
+                , "mid_year_population_estimates_aged_65_2011"
+                , "mid_year_population_estimates_working_age_2011"
+                , "x2011_census_population_age_structure_all_ages"
+                , "household_composition_couple_household_without_dependent_children_2011"
+                , "household_composition_lone_parent_household_2011"
+                , "country_of_birth_percent_not_united_kingdom_2011"
+                , "ethnic_group_white_percent_2011"  
+                , "ethnic_group_mixed_multiple_ethnic_groups_percent_2011"                                                                
+                , "ethnic_group_asian_asian_british_percent_2011"                                                                         
+                , "ethnic_group_black_african_caribbean_black_british_percent_2011"                                                       
+                , "ethnic_group_other_ethnic_group_percent_2011"                                                                          
+                , "ethnic_group_bame_percent_2011" 
+                , "household_language_percent_of_households_where_no_people_aged_16_or_over_have_english_as_a_main_language_2011"
+                , "tenure_private_rented_percent_2011"
+                , "tenure_social_rented_percent_2011"
+                , "tenure_owned_with_a_mortgage_or_loan_percent_2011"
+                , "house_prices_median_price_2010"
+                , "house_prices_median_price_2011"
+                , "house_prices_median_price_2012"
+                , "adults_in_employment_percent_of_households_with_no_adults_in_employment_with_dependent_children_2011"
+                , "economic_activity_economically_active_total_2011"                                                                      
+                , "economic_activity_economically_inactive_total_2011"                                                                    
+                , "economic_activity_economically_active_employee_2011"                                                                   
+                , "economic_activity_economically_active_self_employed_2011"                                                              
+                , "economic_activity_economically_active_unemployed_2011"                                                                 
+                , "economic_activity_economically_active_full_time_student_2011"
+                , "economic_activity_unemployment_rate_2011"
+                , "qualifications_percent_no_qualifications_2011"
+                , "health_bad_or_very_bad_health_percent_2011"
+                , "car_or_van_availability_no_cars_or_vans_in_household_percent_2011"
+              )
+```
+
+
+```{r}
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+```
+
+
+Adding other sources of data, check NOMIS
+
+```{r}
+dir(here("Data", "London"), pattern = ".csv")
+```
+
+Adding other sources of data, check Kaagle
+https://www.kaggle.com/datasets/dalreada/all-uk-active-companies-by-sic-and-geolocated
+Set-up account: https://koderkow.github.io/kaggler/articles/kaggler.html
+Copy JSON file
+Place the kaggle.json file in the ~/.kaggle/ directory 
+THEN py_run_string("import kaggle")
+Python kaggle API
+
+```{r}
+kaggle <- import("kaggle")
+```
+
+Download all files in dataset [see fifference between '''_download_file and '''_download_files]
+
+```{r}
+kaggle$api$dataset_download_files("dalreada/all-uk-active-companies-by-sic-and-geolocated"
+                                 , path = here("Data", "London")
+                                 , unzip = TRUE
+                                 )
+```
+
+Downloads 2 files: AllCompanies2.csv and SIC.csv
+Read the files, clean and generate variables
+
+```{r}
+require(lubridate)
+
+companies_data <- read.csv(here("Data"
+                           , "London"
+                           , "AllCompanies2.csv")
+                      , header = TRUE
+                      , check.names = FALSE
+                      ) %>% 
+                 janitor::clean_names(.) %>% 
+                  mutate(sic = ifelse(sic == "None", NA, sic)) %>% 
+                  mutate(sic = as.integer(sic)) %>% 
+                  filter(sic != 99999) %>%
+                  mutate(sic = sprintf("%05d", sic)) %>% 
+                  mutate(incorporation_date = as.Date(incorporation_date, format = "%d/%m/%Y")) %>% 
+                  mutate(firm_age = interval(incorporation_date, Sys.Date()) / years(1)) %>% 
+                  mutate(firm_age = round(firm_age, 0))
+```
+```{r}
+companies_data %>% 
+  filter(sic == "None") %>% 
+  nrow() #'[1] 2.5% with empty SIC
+
+```  
+A dormant company is a company that has already been through the company registration 
+and incorporation process but it does not carry out business activities in a given 
+period of time. SIC code 99999.
+
+```{r}
+sic_df <- read.csv(here("Data"
+                          , "London"
+                          , "SIC.csv")
+                          , header = TRUE
+                          , check.names = FALSE
+                          ) %>% 
+            janitor::clean_names(.) %>% 
+            mutate(sic_code = as.character(sic_code)) %>%
+            mutate(sic_code = sprintf("%05s", sic_code))
+```
+
+Merge the SIC data with the companies data
+
+```{r}
+companies_data <- companies_data %>% 
+  left_join(sic_df, by = c("sic"="sic_code"))
+
+dim(companies_data)
+```
+
+[1] 3546225       8
+Check if all companies have Y:X pairs
+
+```{r}
+colnames(companies_data)
+dim(companies_data)
+
+
+companies_data %>% 
+  filter(is.na(latitude) | is.na(longitude)) %>% 
+  nrow()
+```
+
+Check if all companies have SIC
+
+```{r}
+companies_data %>% 
+  filter(is.na(sic)) %>% 
+  nrow()
+```
+
+Merge the data with the LSOA boundaries:
+Convert csv to sf
+
+```{r}
+points_sf <- st_as_sf(companies_data
+                      , coords = c("longitude", "latitude")
+                      , crs = st_crs(lsoa_data_sf))
+
+points_sf$points_id <- seq_len(nrow(points_sf))
+lsoa_data_sf$polygon_id <- seq_len(nrow(lsoa_data_sf))
+```
+
+Set up parallel processing
+
+```{r}
+num_cores <- parallel::detectCores() - 1  #' Leave one core free for system processes
+cl <- makeCluster(num_cores)
+```
+
+Export necessary packages and functions to the cluster
+
+```{r include=FALSE}
+clusterEvalQ(cl, {
+  library(sf)
+  library(dplyr)
+})
+```
+
+Function to process chunks
+
+```{r}
+process_chunk <- function(chunk, polygons) {
+  #' Use st_intersects for efficient spatial join
+  intersects <- sf::st_intersects(chunk, polygons)
+  
+  #' Assign polygon IDs to points
+  chunk$matched_polygon_id <- sapply(intersects, function(x) {
+    if (length(x) > 0) polygons$polygon_id[x[1]] else NA
+  })
+  
+  #' Join polygon attributes
+  chunk <- left_join(chunk, 
+                     as.data.frame(polygons) %>% select(-geometry),
+                     by = c("matched_polygon_id" = "polygon_id"))
+  
+  return(chunk)
+}
+```
+
+Main processing function
+```{r}
+spatial_join <- function(points_sf, lsoa_data_sf, chunk_size = 100000) {
+  
+  #' Ensure validity of polygons
+  lsoa_data_sf <- st_make_valid(lsoa_data_sf)
+  
+  #' Split points into chunks
+  point_list <- split(points_sf, ceiling(seq_len(nrow(points_sf))/chunk_size))
+  
+  #' Export large objects to the cluster workers
+  clusterExport(cl, c("lsoa_data_sf", "process_chunk"))
+  
+  #' Process chunks in parallel
+  results <- parLapply(cl, point_list, process_chunk, polygons = lsoa_data_sf)
+  
+  #' Combine results
+  points_with_polygon <- do.call(rbind, results)
+  
+  return(points_with_polygon)
+}
+```
+
+Check points_id and polygon_id are present
+
+```{r}
+if (!"points_id" %in% names(points_sf)) stop("points_sf must have a 'points_id' column")
+if (!"polygon_id" %in% names(lsoa_data_sf)) stop("lsoa_data_sf must have a 'polygon_id' column")
+```
+
+Perform the efficient spatial join
+
+```{r}
+points_with_polygon <- spatial_join(points_sf, lsoa_data_sf)
+```
+
+Clean up and save
+
+```{r}
+stopCluster(cl)
+gc()
+```
+
+Save the resulting dbs
+
+```{r}
+require(here)
+
+saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+
+```
+
+Starting point with saved data ----
+
+
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+
+
+Create a color palette for polygons
+
+```{r}
+pal <- colorFactor(palette = "viridis", domain = lsoa_data_sf$polygon_id)
+```
+
+Summary of the join results
+
+```{r}
+cat("Points assigned to polygons:", sum(!is.na(points_with_polygon$matched_polygon_id)), "\n")
+cat("Points not assigned to any polygon:", sum(is.na(points_with_polygon$matched_polygon_id)), "\n")
+```
+
+#'CHECK!!!!!! Lots of points not assigned to any polygon!!!!
+Census data https://www.nomisweb.co.uk/census/2011/bulk
+Job density https://www.nomisweb.co.uk/datasets/jd
+Query https://www.nomisweb.co.uk/query/select/getdatasetbytheme.asp?theme=75&subgrp=Local+Characteristics
+https://webarchive.nationalarchives.gov.uk/ukgwa/20160105230903/http://www.ons.gov.uk/ons/guide-method/classifications/current-standard-classifications/standard-industrial-classification/index.html
+https://npalomin.github.io/pnum/IDBR.html
+Boundaries detection (Following Legewie, 2018) -----
+library("matrixStats")
+
+```{r}
+require("scales")
+require("spdep")
+
+groundhog.library(c("tidycensus", "stargazer", "lintr",
+                    "styler", "matrixStats"
+                   )
+                  ,groundhog.day
+                  ,force.install = TRUE
+)
+```
+
+
+Difference variables
+
+```{r}
+require(here)
+
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+colnames(lsoa_data_sf)
+```
+
+[14] "ethnic_group_white_percent_2011"                                                                              
+[15] "ethnic_group_mixed_multiple_ethnic_groups_percent_2011"                                                       
+[16] "ethnic_group_asian_asian_british_percent_2011"                                                                
+[17] "ethnic_group_black_african_caribbean_black_british_percent_2011"                                              
+[18] "ethnic_group_other_ethnic_group_percent_2011"                                                                 
+[19] "ethnic_group_bame_percent_2011" 
+
+```{r}
+new_names <- c("p_race_white"
+               , "p_race_mixed"
+               , "p_race_asian_brit"
+               , "p_race_african_carib_black"
+               , "p_race_bame"
+              )
+
+old_names <- c("ethnic_group_white_percent_2011"
+                 , "ethnic_group_mixed_multiple_ethnic_groups_percent_2011"
+                 , "ethnic_group_asian_asian_british_percent_2011"
+                 , "ethnic_group_black_african_caribbean_black_british_percent_2011"
+                 , "ethnic_group_bame_percent_2011"
+              )   
+
+lsoa_data_sf <- lsoa_data_sf %>% 
+                dplyr::rename_with(~ new_names, all_of(old_names)) %>% 
+                dplyr::mutate(across(all_of(new_names), ~ . / 100))
+
+vars <- c("p_race_white"
+          , "p_race_mixed"
+          , "p_race_asian_brit"
+          , "p_race_african_carib_black"
+          , "p_race_bame"
+        )
+
+table(new_names)
+
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+```
+
+Verifying if proportion data is correct
+
+```{r}
+lsos_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+
+filtered_data <- lsoa_data_sf %>%
+  dplyr::filter(if_any(all_of(vars), all_vars(. >= 1)))
+
+#View(filtered_data[vars]) # Should be an empty table
+rm(filtered_data)
+```
+
+#'sp do not support empty geometries
+
+```{r}
+sum(st_is_empty(lsoa_data_sf))
+```
+
+[1] 0
+chi_ct <- chi_ct[!st_is_empty(chi_ct), ]
+FUNCTION ERRORS!!!!!
+[1]: error in evaluating the argument 'x' in selecting a method for function 
+'addAttrToGeom': empty geometries are not supported by sp classes: conversion failed
+'ORIGIN ERROR 1: sp do not support empty geometries
+'SOLUTION ERROR 1: remove empty geometries
+'LOCATION ERROR 1: function areal_wombling:25; function areal_wombling_bayesian:84;
+'                function areal_wombling_bayesian:130
+'
+'[2]: `mutate_()` was deprecated in dplyr 0.7.0. Please use `mutate()` instead.
+'ORIGIN ERROR 2: function deprecated
+'SOLUTION ERROR 2: use mutate instead of mutate_
+'LOCATION ERROR 2: function areal_wombling:49&51
+'DOWNSTREAM ERROR DUE TO SOLUTION 2:  mutate() cannot handle formulas directly. 
+'use rlang::eval_tidy() to evaluate the formulas within the data frame’s context.
+'modify your code to evaluate the formulas in dots_blv and dots_bmv and return a vector
+'
+debug(areal_wombling)
+
+Loading functions
+
+```{r}
+require(here)
+
+source(here("BoundaryDetection.R"))
+```
+
+Running areal wombling
+```{r}
+require(sf)
+
+  bdr <- areal_wombling(  lsoa_data_sf
+                        , vars
+                        , threshold = NA
+                       ) 
+  
+#{NA}= fuzzy wombling, {0,1}= crips wombling
+```
+
+Mapping boundaries
+
+```{r}
+par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+```
+
+Plot 1: Areal units with proportion African-American
+
+```{r}
+require(scales)
+
+scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
+plot(as(lsoa_data_sf, "Spatial"),
+     col = scale_color(lsoa_data_sf$p_race_african_carib_black),
+     lwd = 0.01, bor = "white"
+)
+vals <- quantile(lsoa_data_sf$p_race_african_carib_black, probs = c(0, 0.25, .5, 0.75, 1), na.rm = TRUE)
+legend(-87.87, 41.73,
+       legend = c("0%", "25%", "50%", "75%", "100%"),
+       fill = scale_color(vals), cex = 0.8,
+       box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
+)
+```
+
+Plot 2: Boundaries
+
+```{r}
+plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 1.25)))
+
+#The spatial lines object does not include city boundaries. Let's add them
+
+chi <- st_union(lsoa_data_sf)
+plot(as(chi, "Spatial"), lwd = 0.8, add = TRUE)
+
+#Legend showing the scale of boundary values
+
+legend(-87.87, 41.73,
+       legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+       cex = 0.8, box.lty = 0, border = "#'00000000",
+       title = "Boundary Value", title.adj = 3.5
+)
+
+png(here("Figures","p_race_african_carib_black_blv.png"), width = 800, height = 600)
+
+dev.off()
+```
+
+aggregate from line segments to block group level
+
+```{r}
+require(here)
+
+lsoa_data_sf_blv <- bind_rows(
+  group_by(bdr@data, i) %>%
+    summarise_at(vars(ends_with("blv")), max, na.rm = TRUE),
+  group_by(bdr@data, j) %>%
+    summarise_at(vars(ends_with("blv")), max, na.rm = TRUE) %>% dplyr::rename(i = j)
+) %>%
+  group_by(i) %>%
+  summarise_at(vars(ends_with("blv")), max, na.rm = TRUE) %>% 
+  janitor::clean_names()
+
+lsoa_data_sf <- bind_cols(lsoa_data_sf
+                                     , dplyr::select(lsoa_data_sf_blv
+                                     , -i)
+                                    )
+
+saveRDS(lsoa_data_sf_blv, here("Data", "lsoa_data_sf_blv.rds"))
+```
+
+compare the boundary values for spatial lines (border line segments) with the
+boundary values for areal units.
+for spatial lines (border line segments) with the boundary values for areal units.
+
+```{r}
+par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+```
+
+Plot 1: Boundary values for border line segments
+
+```{r}
+(summary_data <- bdr@data %>%
+  summarise(mean_value = mean(p_race_african_carib_black_blv)
+            , min_value = min(p_race_african_carib_black_blv)
+            , max_value = max(p_race_african_carib_black_blv)
+          )
+)
+```
+
+```{r}
+# plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 1.25)))
+plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 0.35)))
+# plot(bdr, lwd = bdr$p_race_african_carib_black_blv)
+
+chi <- st_union(lsoa_data_sf)
+
+plot(as(chi, "Spatial"), lwd = 0.5, add = TRUE)
+legend(-87.87, 41.73,
+       legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 0.35)),
+       #' lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+       cex = 0.8, box.lty = 0, border = "#'00000000",
+       title = "Boundary Value", title.adj = 3.5
+)
+
+png(here("Figures","Boundary_values_segment.png"), width = 800, height = 600)
+```
+
+Plot 2: Boundary values for border line segments for areal units
+
+```{r}
+sel <- is.finite(lsoa_data_sf_blv$p_race_african_carib_black_blv)
+scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
+cols <- scale_color(lsoa_data_sf_blv$p_race_african_carib_black_blv[sel])
+
+plot(as(lsoa_data_sf[sel, ], "Spatial"), lwd = 0.1, col = cols, bor = "white")
+legend(-87.87, 41.73,
+       legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+       fill = scale_color(c(0, 0.25, 0.5, 0.75, 1)), cex = 0.8, box.lty = 0,
+       border = "#00000000", title = "Boundary Value", title.adj = 3.5
+)
+
+png(here("Figures","Boundary_values_areal.png"), width = 800, height = 600)
+dev.off()
+```
+
+Spatial EDA -----
+"r pkg("sfdep")" "Python pkg("PySal")"
+Spatial autocorrelation
+Spatial heterogeneity
+Spatial regression -----
+
+```{r}
+new_names2 <- c("working_age_pop"
+               , "all_ages_pop" #'CHECK!!!
+               , "lone_parent_hh"
+               , "not_uk_born"
+               , "no_english_main_lang"
+               , "house_price_2010"
+               , "no_adults_in_employment"
+               , "full_time_student"
+               , "unemployment_rate"
+               , "no_qualifications"
+               , "bad_health"
+              )
+
+old_names2 <- c("mid_year_population_estimates_working_age_2011"
+               , "x2011_census_population_age_structure_all_ages"
+               , "household_composition_lone_parent_household_2011"
+               , "country_of_birth_percent_not_united_kingdom_2011"
+               , "household_language_percent_of_households_where_no_people_aged_16_or_over_have_english_as_a_main_language_2011"
+               , "house_prices_median_price_2010"
+               , "adults_in_employment_percent_of_households_with_no_adults_in_employment_with_dependent_children_2011"
+               , "economic_activity_economically_active_full_time_student_2011"
+               , "economic_activity_unemployment_rate_2011"
+               , "qualifications_percent_no_qualifications_2011"
+               , "health_bad_or_very_bad_health_percent_2011"
+              )
+
+lsoa_data_sf <- lsoa_data_sf %>% 
+  dplyr::rename_with(~ new_names2, all_of(old_names2))
+```
+
+Create variable with count of companies, using matched id
+Assuming that lsoa_data_sf$polygon_id matches points_with_polygon$matched_polygon_id
+The coalesce() function at the end ensures that polygons with no matching points get a count of 0 instead of NA
+
+Convert points_with_polygon to a regular data frame for counting
+
+```{r}
+library(sf)
+
+points_df <- points_with_polygon %>%
+  st_drop_geometry() %>%
+  group_by(matched_polygon_id) %>%
+  summarise(company_count = n())
+```
+
+Join count data to the sf object
+
+```{r}
+library(dplyr)
+
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+
+lsoa_data_sf <- lsoa_data_sf %>%
+  left_join(points_df, by = c("polygon_id" = "matched_polygon_id")) %>%
+  mutate(company_count = coalesce(.$company_count, 0))  #' Replace NA with 0 for polygons with no points
+```
+
+Legewie (2018) derives two measures from the boundary values that are appropriate for multi-group settings. 
+Change this as this is not correct
+
+```{r}
+require(here)
+
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+
+lsoa_data_sf <- lsoa_data_sf %>%
+  mutate(
+    #' composite measure
+    edge_wombling_race = matrixStats::rowMaxs(
+      cbind(p_race_white_blv
+            ,p_race_mixed_blv
+            ,p_race_asian_brit_blv
+            ,p_race_african_carib_black_blv
+            ,p_race_bame_blv
+            )
+      , na.rm = FALSE
+                                          ),
+    #' pairwise boundary measures
+     edge_race_wm    = p_race_white_blv * p_race_mixed_blv
+    ,edge_race_wab   = p_race_white_blv * p_race_asian_brit_blv
+    ,edge_race_wafc  = p_race_white_blv * p_race_african_carib_black_blv
+    ,edge_race_wb    = p_race_white_blv * p_race_bame_blv
+    ,edge_race_mab   = p_race_mixed_blv * p_race_asian_brit_blv
+    ,edge_race_mafc  = p_race_mixed_blv * p_race_african_carib_black_blv
+    ,edge_race_wb    = p_race_mixed_blv * p_race_bame_blv
+    ,edge_race_abafc = p_race_asian_brit_blv * p_race_african_carib_black_blv
+    ,edge_race_abb   = p_race_asian_brit_blv * p_race_bame_blv
+    ,edge_race_afcb  = p_race_african_carib_black_blv * p_race_bame_blv
+  )
+
+# merge
+lsoa_data_sf <- left_join(lsoa_data_sf, lsoa_data_sf_blv, by = "polygon_id")
+```
+
+Run regressions ----
+See https://github.com/cran-task-views/Spatial/blob/main/Spatial.md
+#' Basic regression
+
+```{r}
+f1 <- "company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white +
+               p_race_mixed + p_race_asian_brit  + p_race_african_carib_black +
+               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 + 
+               bad_health + working_age_pop"
+m1 <- glm.nb(f1, data = lsoa_data_sf)
+
+stargazer(m1
+          , type = "text"
+          , no.space = TRUE
+          , star.cutoffs = c(0.05, 0.01, 0.001)
+          , out = here("Output", "regression_tablef1.txt")
+          )
+```
+
+Compare the composite measure to the pairwise boundary measures
+
+```{r}
+f2 <- "company_count ~ edge_wombling_race +log(all_ages_pop) + p_race_white  + 
+               p_race_mixed + p_race_asian_brit  + p_race_african_carib_black + 
+               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 +  
+               bad_health + working_age_pop"
+
+f3 <- "company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race_wb +     
+                          edge_race_mab + edge_race_mafc + edge_race_wb + edge_race_abafc + 
+                          edge_race_abb + edge_race_afcb + log(all_ages_pop) +  
+                          p_race_white + p_race_mixed + p_race_asian_brit +  
+                          p_race_african_carib_black + p_race_bame +  
+                          lone_parent_hh + not_uk_born + house_price_2010 +  
+                          bad_health + working_age_pop"
+
+m2 <- glm.nb(f2, data = lsoa_data_sf)
+m3 <- glm.nb(f3, data = lsoa_data_sf)
+
+stargazer(m2, m3
+          , type = "text"
+          , no.space = TRUE
+          , star.cutoffs = c(0.05, 0.01, 0.001)
+          , column.labels = c("Composite measure", "Pairwise boundaries")
+          , out = here("Output", "regression_tablef2f3.txt")
+          )
+```
+
+#' GWR or spatially varying coefficient (SVC) models?
+CAVEAT:collinearity tends to be problematic in GWR models, See Comber et al. 2022
+https://onlinelibrary.wiley.com/doi/10.1111/gean.12316
+r pkg("varycoef") and r pkg("spBayes")
+r pkg("gwrr") pkg("GWmodel") pkg("spgwr")
+Also fastgwr https://github.com/Ziqi-Li/FastGWR in Python
+
+```{r}
+library(spgwr)
+```
+
+Fixed Bandwidth
+find optimal kernel bandwidth using cross validation
+
+```{r}
+fbw <- gwr.sel(eq1, 
+               data = utla_shp, 
+               coords=cbind( long, lat),
+               longlat = TRUE,
+               adapt=FALSE, 
+               gweight = gwr.Gauss, 
+               verbose = FALSE)
+```
+
+view selected bandwidth
+
+```{r}
+fbw
+```
+
+fit a gwr based on fixed bandwidth
+
+```{r}
+fb_gwr <- gwr(eq1, 
+              data = utla_shp,
+              coords=cbind( long, lat),
+              longlat = TRUE,
+              bandwidth = fbw, 
+              gweight = gwr.Gauss,
+              hatmatrix=TRUE, 
+              se.fit=TRUE)
+
+fb_gwr
+```
+
+write gwr output into a data frame
+
+```{r}
+fb_gwr_out <- as.data.frame(fb_gwr$SDF)
+
+utla_shp$fmb_localR2 <- fb_gwr_out$localR2
+```
+
+mapping results
+Local R2
+
+```{r}
+map_fbgwr1 = tm_shape(utla_shp) +
+  tm_fill(col = "fmb_localR2", title = legend_title, palette = magma(256), style = "cont") + #' add fill
+  tm_borders(col = "white", lwd = .1)  + #' add borders
+  tm_compass(type = "arrow", position = c("right", "top") , size = 5) + #' add compass
+  tm_scale_bar(breaks = c(0,1,2), text.size = 0.7, position =  c("center", "bottom")) + #' add scale bar
+  tm_layout(bg.color = "white") #' change background colour
+map_fbgwr1 + tm_shape(reg_shp) + #' add region boundaries
+  tm_borders(col = "white", lwd = .5) #' add borders
+legend_title = expression("Fixed: Local R2")
+```
+
+Adaptive bandwidth
+find optimal kernel bandwidth using cross validation
+
+```{r}
+abw <- gwr.sel(eq1, 
+               data = utla_shp, 
+               coords=cbind( long, lat),
+               longlat = TRUE,
+               adapt = TRUE, 
+               gweight = gwr.Gauss, 
+               verbose = FALSE)
+```
+
+view selected bandwidth
+
+```{r}
+abw
+```
+
+Assessing model fit
+write gwr output into a data frame
+
+```{r}
+ab_gwr_out <- as.data.frame(ab_gwr$SDF)
+
+utla_shp$amb_ethnic <- ab_gwr_out$ethnic
+utla_shp$amb_lt_illness <- ab_gwr_out$lt_illness
+utla_shp$amb_localR2 <- ab_gwr_out$localR2
+```
+
+Mapping results
+Local R2
+
+```{r}
+map_abgwr1 = tm_shape(utla_shp) +
+  tm_fill(col = "amb_localR2", title = legend_title, palette = magma(256), style = "cont") + #' add fill
+  tm_borders(col = "white", lwd = .1)  + #' add borders
+  tm_compass(type = "arrow", position = c("right", "top") , size = 5) + #' add compass
+  tm_scale_bar(breaks = c(0,1,2), text.size = 0.7, position =  c("center", "bottom")) + #' add scale bar
+  tm_layout(bg.color = "white") #' change background colour
+map_abgwr1 + tm_shape(reg_shp) + #' add region boundaries
+  tm_borders(col = "white", lwd = .5) #' add borders
+legend_title = expression("Adaptive: Local R2")
+```
+
+#' SGWR
+See: https://github.com/Lessani252/SGWR
