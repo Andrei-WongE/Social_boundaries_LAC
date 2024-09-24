@@ -49,7 +49,7 @@ packageVersion("openxlsx")
 ```{r setup, include =  FALSE}
 
 library(knitr)
-opts_chunk$set(cache = TRUE)
+opts_chunk$set(cache = TRUE, eval = FALSE)
 
 ```
 Get LSOA boundaries:----

@@ -1,6 +1,3 @@
-# require(utils)
-# data(london)
-
 if (!require("pacman")|!require("groundhog")| !require("here")) {
   
   install.packages(c("pacman","groundhog", "here"))
@@ -11,8 +8,6 @@ library("pacman")
 library("here")
 library("groundhog")
 
-# install.packages("groundhog")
-library("groundhog")
 set.groundhog.folder(here("groundhog_library"))
 groundhog.day = "2024-04-25" #"2020-05-12"
 #Dowloaded fromn https://github.com/CredibilityLab/groundhog
@@ -24,13 +19,13 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
          , "dplyr", "openxlsx", "MASS", "reticulate"
          , "future", "furrr", "data.table","leaflet"
-         , "spgwr"
+         , "spgwr", "jtools"
          )
 
 groundhog.library(pkgs, groundhog.day)
 library(parallel) # Core package, so no install
 
-# require(devtools)
+# requir(devtools)
 # devtools::install_github("mkearney/kaggler")
 # require(kaggler) # This does not work
 # IN Terminal: pip install kaglle
@@ -106,7 +101,7 @@ nrow(lsoa_data)
 # [1] 4835
 
 # Cleaning names
-lsoa_data <- clean_names(lsoa_data) %>% 
+lsoa_data <- janitor::clean_names(lsoa_data) %>% 
   dplyr::rename_at(1, ~'LSOA11CD')
 
 colnames(lsoa_data)
@@ -257,6 +252,7 @@ dir(here("Data", "London"), pattern = ".csv")
 # THEN py_run_string("import kaggle")
 
 # Python kaggle API
+require(reticulate)
 kaggle <- import("kaggle")
 
 # Download all files in dataset [see fifference between '''_download_file and '''_download_files]
@@ -273,7 +269,7 @@ companies_data <- read.csv(here("Data"
                       , header = TRUE
                       , check.names = FALSE
                       ) %>% 
-                  clean_names(.) %>% 
+                  janitor::clean_names(.) %>% 
                   mutate(sic = ifelse(sic == "None", NA, sic)) %>% 
                   mutate(sic = as.integer(sic)) %>% 
                   filter(sic != 99999) %>%
@@ -296,7 +292,7 @@ sic_df <- read.csv(here("Data"
                           , header = TRUE
                           , check.names = FALSE
                           ) %>% 
-            clean_names(.) %>% 
+            janitor::clean_names(.) %>% 
             mutate(sic_code = as.character(sic_code)) %>%
             mutate(sic_code = sprintf("%05s", sic_code))
 
@@ -462,10 +458,7 @@ gc()
 
 # Save the resulting dbs
 saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
-
-# Starting point with saved data ----
-points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
-lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
 
 # Create a color palette for polygons
 pal <- colorFactor(palette = "viridis", domain = lsoa_data_sf$polygon_id)
@@ -544,7 +537,6 @@ groundhog.library(c("tidycensus", "stargazer", "lintr",
 , force.install = TRUE
 )
 
-
 # Loading functions
 source(here("BoundaryDetection.R"))
 
@@ -616,7 +608,7 @@ sum(st_is_empty(lsoa_data_sf))
 #'
 # debug(areal_wombling)
 
-  bdr <- areal_wombling(  lsoa_data_sf
+bdr <- areal_wombling(  lsoa_data_sf
                         , vars
                         , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
 ) 
@@ -630,36 +622,58 @@ sum(st_is_empty(lsoa_data_sf))
 #                         , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
 #                         ) 
 
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+saveRDS(bdr, here("Data","London", "bdr_sp.rds"))
+
+# Starting point with saved data ----
+points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+
+bdr_sf <- st_as_sf(bdr)
+bdr_sf <- bdr_sf[!st_is_empty(bdr_sf), ] # Remove any features with empty geometries
+
 # Mapping ################################################
+require(grDevices)
+require(viridis)
+
 par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+
+# bbox <- st_bbox(bdr_sf)
+# legend_x <- bbox["xmin"] + (bbox["xmax"] - bbox["xmin"]) * 0.1  # 10% from the left
+# legend_y <- bbox["ymin"] + (bbox["ymax"] - bbox["ymin"]) * 0.9  # 90% from the bottom
+
 
 # Plot 1: Areal units with proportion African-American
 scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
-plot(as(lsoa_data_sf, "Spatial"),
+plot(lsoa_data_sf[,17],
      col = scale_color(lsoa_data_sf$p_race_african_carib_black),
-     lwd = 0.01, bor = "white"
+     lwd = 0.01, border = "white"
 )
 vals <- quantile(lsoa_data_sf$p_race_african_carib_black, probs = c(0, 0.25, .5, 0.75, 1), na.rm = TRUE)
-legend(-87.87, 41.73,
+legend(-0.4180936,51.64666,
        legend = c("0%", "25%", "50%", "75%", "100%"),
        fill = scale_color(vals), cex = 0.8,
        box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
 )
+png(here("Figures","p_race_african_carib_black_blv_areal.png")
+    , width = 800, height = 600)
 
 # Plot 2: Boundaries
-plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 1.25)))
+plot(bdr_sf[,6]
+     , lwd = rescale(bdr_sf$p_race_african_carib_black_blv, to = c(0.1, 1.5)))
 # The spatial lines object does not include city boundaries. Let's add them
 chi <- st_union(lsoa_data_sf)
-plot(as(chi, "Spatial"), lwd = 0.8, add = TRUE)
+plot(chi, lwd = 0.8, add = TRUE)
 # Legend showing the scale of boundary values
-legend(-87.87, 41.73,
+legend(-0.4180936,51.64666,
        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
-       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.2, 1.5)),
        cex = 0.8, box.lty = 0, border = "#00000000",
        title = "Boundary Value", title.adj = 3.5
 )
 
-png(here("Figures","p_race_african_carib_black_blv.png"), width = 800, height = 600)
+png(here("Figures","p_race_african_carib_black_blv_boundaries.png")
+    , width = 800, height = 600)
 
 dev.off()
 
@@ -682,46 +696,85 @@ lsoa_data_sf <- bind_cols(lsoa_data_sf
 # compare the boundary values for spatial lines (border line segments) with the
 # boundary values for areal units.
 # for spatial lines (border line segments) with the boundary values for areal units.
-par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+  # par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+  # 
+  # # Plot 1: Boundary values for border line segments
+  # 
+  # print(summary(bdr_sf$p_race_african_carib_black_blv))
+  # 
+  # plot(bdr_sf[,6]
+  #      , lwd = rescale(bdr_sf$p_race_african_carib_black_blv
+  #      , to = c(0.1, 1.25))
+  #      )
+  # # plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 0.47)))
+  # # plot(bdr, lwd = bdr$p_race_african_carib_black_blv)
+  # 
+  # chi <- st_union(lsoa_data_sf)
+  # 
+  # plot(chi, lwd = 0.5, add = TRUE)
+  # legend("bottomright",
+  #        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+  #        # lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1)),
+  #        lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+  #        cex = 0.8, box.lty = 0, border = "#00000000",
+  #        title = "Boundary Value", title.adj = 3.5
+  # )
+  # 
+  # # png(here("Figures","Boundary_values_segment.png"), width = 800, height = 600)
+  # 
+  # # Plot 2: Boundary values for border line segments for areal units
+  # sel <- is.finite(lsoa_data_sf$p_race_african_carib_black_blv)
+  # scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
+  # cols <- scale_color(lsoa_data_sf$p_race_african_carib_black_blv[sel])
+  # 
+  # plot(as(lsoa_data_sf[sel, ], "Spatial"), lwd = 0.1, col = cols, bor = "white")
+  # legend("bottomright",
+  #        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
+  #        fill = scale_color(c(0, 0.25, 0.5, 0.75, 1)), cex = 0.8, box.lty = 0,
+  #        border = "#00000000", title = "Boundary Value", title.adj = 3.5
+  # )
+  # 
+  # png(here("Figures","Boundary_values_lineseg.png"), width = 800, height = 600)
+  # dev.off()
+  # 
+  # 
+
+# Set up the plotting area
+par(mfrow = c(1, 2), mar = c(0, 0, 2, 0))
 
 # Plot 1: Boundary values for border line segments
-(summary_data <- bdr@data %>%
-  summarise(mean_value = mean(p_race_african_carib_black_blv)
-            , min_value = min(p_race_african_carib_black_blv)
-            , max_value = max(p_race_african_carib_black_blv)
-          )
-)
+print(summary(bdr_sf$p_race_african_carib_black_blv))
 
-# plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 1.25)))
-plot(bdr, lwd = rescale(bdr$p_race_african_carib_black_blv, to = c(0.1, 0.35)))
-# plot(bdr, lwd = bdr$p_race_african_carib_black_blv)
+plot(st_geometry(bdr_sf),
+     lwd = rescale(bdr_sf$p_race_african_carib_black_blv, to = c(0.1, 1.25)),
+     main = "Boundary Values for Border Line Segments")
 
-chi <- st_union(lsoa_data_sf_boundaries)
+chi <- st_union(lsoa_data_sf)
 
-plot(as(chi, "Spatial"), lwd = 0.5, add = TRUE)
-legend(-87.87, 41.73,
+plot(st_geometry(chi), lwd = 0.5, add = TRUE)
+legend("bottomright",
        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
-       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 0.35)),
-       # lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
+       lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.1, 1.25)),
        cex = 0.8, box.lty = 0, border = "#00000000",
-       title = "Boundary Value", title.adj = 3.5
-)
-
-png(here("Figures","Boundary_values_segment.png"), width = 800, height = 600)
+       title = "Boundary Value", title.adj = 3.5)
 
 # Plot 2: Boundary values for border line segments for areal units
-sel <- is.finite(lsoa_data_sf_boundaries$p_race_african_carib_black_blv)
-scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
-cols <- scale_color(lsoa_data_sf_boundaries$p_race_african_carib_black_blv[sel])
+sel <- is.finite(lsoa_data_sf$p_race_african_carib_black_blv)
+scale_color <- colorNumeric(viridis(100), domain = c(0, 1))
+cols <- scale_color(lsoa_data_sf$p_race_african_carib_black_blv[sel])
 
-plot(as(lsoa_data_sf_boundaries[sel, ], "Spatial"), lwd = 0.1, col = cols, bor = "white")
-legend(-87.87, 41.73,
+plot(st_geometry(lsoa_data_sf[sel, ]),
+     col = cols, border = "white",
+     main = "Boundary Values for Areal Units")
+
+legend("bottomright",
        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
-       fill = scale_color(c(0, 0.25, 0.5, 0.75, 1)), cex = 0.8, box.lty = 0,
-       border = "#00000000", title = "Boundary Value", title.adj = 3.5
-)
+       fill = scale_color(c(0, 0.25, 0.5, 0.75, 1)),
+       cex = 0.8, box.lty = 0, border = "#00000000",
+       title = "Boundary Value", title.adj = 3.5)
 
-png(here("Figures","Boundary_values_areal.png"), width = 800, height = 600)
+# Save the plots
+png(here("Figures", "Boundary_values_combined.png"), width = 1600, height = 600)
 dev.off()
 
 # Spatial EDA ################################################
@@ -768,7 +821,7 @@ lsoa_data_sf <- lsoa_data_sf %>%
 # Assuming that lsoa_data_sf$polygon_id matches points_with_polygon$matched_polygon_id
 # The coalesce() function at the end ensures that polygons with no matching points get a count of 0 instead of NA
 
-  library(sf)
+library(sf)
 library(dplyr)
 
 # Convert points_with_polygon to a regular data frame for counting
@@ -855,17 +908,33 @@ stargazer(m2, m3
 ## GWR or spatially varying coefficient (SVC) models?
 # CAVEAT:collinearity tends to be problematic in GWR models, See Comber et al. 2022
 # https://onlinelibrary.wiley.com/doi/10.1111/gean.12316
+# https://gdsl-ul.github.io/san/09-gwr.html
 
 #r pkg("varycoef") and r pkg("spBayes")
 #r pkg("gwrr") pkg("GWmodel") pkg("spgwr")
 # Also fastgwr https://github.com/Ziqi-Li/FastGWR in Python
-library(spgwr)
+require(spgwr)
+require(jtools)
+
+# specify a model equation
+eq1 <- company_count ~ edge_wombling_race +log(all_ages_pop) + p_race_white  + 
+               p_race_mixed + p_race_asian_brit  + p_race_african_carib_black + 
+               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 +  
+               bad_health + working_age_pop
+
+eq2 <- company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race_wb +     
+                          edge_race_mab + edge_race_mafc + edge_race_wb + edge_race_abafc + 
+                          edge_race_abb + edge_race_afcb + log(all_ages_pop) +  
+                          p_race_white + p_race_mixed + p_race_asian_brit +  
+                          p_race_african_carib_black + p_race_bame +  
+                          lone_parent_hh + not_uk_born + house_price_2010 +  
+                          bad_health + working_age_pop
 
 # Fixed Bandwidth
 # find optimal kernel bandwidth using cross validation
 fbw <- gwr.sel(eq1, 
-               data = utla_shp, 
-               coords=cbind( long, lat),
+               data = lsoa_data_sf, 
+               coords=cbind(long, lat),
                longlat = TRUE,
                adapt=FALSE, 
                gweight = gwr.Gauss, 
@@ -876,7 +945,7 @@ fbw
 
 # fit a gwr based on fixed bandwidth
 fb_gwr <- gwr(eq1, 
-              data = utla_shp,
+              data = lsoa_data_sf,
               coords=cbind( long, lat),
               longlat = TRUE,
               bandwidth = fbw, 
