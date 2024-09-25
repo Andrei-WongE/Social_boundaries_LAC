@@ -610,7 +610,8 @@ sum(st_is_empty(lsoa_data_sf))
 
 bdr <- areal_wombling(  lsoa_data_sf
                         , vars
-                        , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
+                        , threshold = NA 
+                        #{NA}= fuzzy wombling, {0,1}= crips wombling
 ) 
 
 
@@ -628,6 +629,7 @@ saveRDS(bdr, here("Data","London", "bdr_sp.rds"))
 # Starting point with saved data ----
 points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
 lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+bdr <- readRDS(here("Data","London", "bdr.rds"))
 
 bdr_sf <- st_as_sf(bdr)
 bdr_sf <- bdr_sf[!st_is_empty(bdr_sf), ] # Remove any features with empty geometries
@@ -655,8 +657,8 @@ legend(-0.4180936,51.64666,
        fill = scale_color(vals), cex = 0.8,
        box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
 )
-png(here("Figures","p_race_african_carib_black_blv_areal.png")
-    , width = 800, height = 600)
+# png(here("Figures","p_race_african_carib_black_blv_areal.png")
+#     , width = 800, height = 600)
 
 # Plot 2: Boundaries
 plot(bdr_sf[,6]
@@ -672,8 +674,8 @@ legend(-0.4180936,51.64666,
        title = "Boundary Value", title.adj = 3.5
 )
 
-png(here("Figures","p_race_african_carib_black_blv_boundaries.png")
-    , width = 800, height = 600)
+# png(here("Figures","p_race_african_carib_black_blv_boundaries.png")
+#     , width = 800, height = 600)
 
 dev.off()
 
@@ -932,10 +934,13 @@ eq2 <- company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race
 
 # Fixed Bandwidth
 # find optimal kernel bandwidth using cross validation
+lsoa_data_sp <- as(lsoa_data_sf, "Spatial")
+coords_db <- coordinates(lsoa_data_sp)
+
 fbw <- gwr.sel(eq1, 
-               data = lsoa_data_sf, 
-               coords=cbind(long, lat),
-               longlat = TRUE,
+               data = lsoa_data_sp, 
+               coords=coords_db,
+               longlat = FALSE, # if SpatialPoints object, the value taken from the object itself
                adapt=FALSE, 
                gweight = gwr.Gauss, 
                verbose = FALSE)
@@ -945,9 +950,9 @@ fbw
 
 # fit a gwr based on fixed bandwidth
 fb_gwr <- gwr(eq1, 
-              data = lsoa_data_sf,
-              coords=cbind( long, lat),
-              longlat = TRUE,
+              data = lsoa_data_sp,
+              coords=coords_db,
+              longlat = FALSE,
               bandwidth = fbw, 
               gweight = gwr.Gauss,
               hatmatrix=TRUE, 
@@ -962,7 +967,7 @@ utla_shp$fmb_localR2 <- fb_gwr_out$localR2
 
 # mapping results
 # Local R2
-map_fbgwr1 = tm_shape(utla_shp) +
+map_fbgwr1 = tm_shape(lsoa_data_sp) +
   tm_fill(col = "fmb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
   tm_borders(col = "white", lwd = .1)  + # add borders
   tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
@@ -975,8 +980,8 @@ legend_title = expression("Fixed: Local R2")
 # Adaptive bandwidth
 # find optimal kernel bandwidth using cross validation
 abw <- gwr.sel(eq1, 
-               data = utla_shp, 
-               coords=cbind( long, lat),
+               data = lsoa_data_sp, 
+               coords=coords_db,
                longlat = TRUE,
                adapt = TRUE, 
                gweight = gwr.Gauss, 
@@ -995,7 +1000,7 @@ utla_shp$amb_localR2 <- ab_gwr_out$localR2
 
 # Mapping results
 # Local R2
-map_abgwr1 = tm_shape(utla_shp) +
+map_abgwr1 = tm_shape(lsoa_data_sp) +
   tm_fill(col = "amb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
   tm_borders(col = "white", lwd = .1)  + # add borders
   tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
@@ -1007,5 +1012,5 @@ legend_title = expression("Adaptive: Local R2")
 
 ## SGWR
 # See: https://github.com/Lessani252/SGWR
-
+# system("conda activate your-env-name && python -m sgwr run -np 8 -datasystem("conda activate your-env-name && python -m sgwr run -np 4 -data C:/path/to/your/data")")
 
