@@ -19,7 +19,7 @@ pkgs = c("dplyr", "tidyverse", "janitor", "sf"
          , "doSNOW", "purrr", "patchwork", "rmapshaper"
          , "dplyr", "openxlsx", "MASS", "reticulate"
          , "future", "furrr", "data.table","leaflet"
-         , "spgwr", "jtools"
+         , "spgwr", "jtools", "gwrr"
          )
 
 groundhog.library(pkgs, groundhog.day)
@@ -307,7 +307,6 @@ dim(companies_data)
 colnames(companies_data)
 dim(companies_data)
 
-
 companies_data %>% 
   filter(is.na(latitude) | is.na(longitude)) %>% 
   nrow()
@@ -396,11 +395,17 @@ lsoa_data_sf$polygon_id <- seq_len(nrow(lsoa_data_sf))
   # 
   # dim(lsoa_data_sf)
 
-# Set up parallel processing
-num_cores <- parallel::detectCores() - 1  # Leave one core free for system processes
+require(sf)
+require(dplyr)
+require(parallel)
+
+# Determine the number of cores to use
+num_cores <- detectCores() - 1  # Leave one core free for system processes
+
+# Set up the cluster
 cl <- makeCluster(num_cores)
 
-# Export necessary packages and functions to the cluster
+# Export necessary libraries to the cluster
 clusterEvalQ(cl, {
   library(sf)
   library(dplyr)
@@ -410,25 +415,26 @@ clusterEvalQ(cl, {
 process_chunk <- function(chunk, polygons) {
   # Use st_intersects for efficient spatial join
   intersects <- sf::st_intersects(chunk, polygons)
-  
   # Assign polygon IDs to points
   chunk$matched_polygon_id <- sapply(intersects, function(x) {
     if (length(x) > 0) polygons$polygon_id[x[1]] else NA
   })
-  
   # Join polygon attributes
-  chunk <- left_join(chunk, 
+  chunk <- left_join(chunk,
                      as.data.frame(polygons) %>% select(-geometry),
                      by = c("matched_polygon_id" = "polygon_id"))
-  
   return(chunk)
 }
 
 # Main processing function
 spatial_join <- function(points_sf, lsoa_data_sf, chunk_size = 100000) {
-  
   # Ensure validity of polygons
   lsoa_data_sf <- st_make_valid(lsoa_data_sf)
+  
+  # Add polygon_id if not present
+  if (!"polygon_id" %in% names(lsoa_data_sf)) {
+    lsoa_data_sf$polygon_id <- 1:nrow(lsoa_data_sf)
+  }
   
   # Split points into chunks
   point_list <- split(points_sf, ceiling(seq_len(nrow(points_sf))/chunk_size))
@@ -445,21 +451,58 @@ spatial_join <- function(points_sf, lsoa_data_sf, chunk_size = 100000) {
   return(points_with_polygon)
 }
 
+# Perform the efficient spatial join
+joined_data <- spatial_join(points_sf, lsoa_data_sf)
+
+# Calculate centroids of the areal data
+areal_centroids <- st_centroid(lsoa_data_sf)
+
+# Extract coordinates of the areal centroids
+areal_coords <- st_coordinates(areal_centroids)
+
+# Extract coordinates of the point data
+point_coords <- st_coordinates(points_sf)
+
+# Create the final coords_db
+coords_db <- matrix(NA, nrow = nrow(lsoa_data_sf), ncol = 2)
+for (i in 1:nrow(lsoa_data_sf)) {
+  matching_points <- which(joined_data$polygon_id == lsoa_data_sf$polygon_id[i])
+  if (length(matching_points) > 0) {
+    # If there are points in this area, use the coordinates of the first point
+    coords_db[i,] <- point_coords[matching_points[1], ]
+  } else {
+    # If there's no point, use the centroid of the area
+    coords_db[i,] <- areal_coords[i,]
+  }
+}
+
+# Name the columns
+colnames(coords_db) <- c("X", "Y")
+
+# Stop the cluster
+stopCluster(cl)
+gc()
+
 # Check points_id and polygon_id are present
 if (!"points_id" %in% names(points_sf)) stop("points_sf must have a 'points_id' column")
 if (!"polygon_id" %in% names(lsoa_data_sf)) stop("lsoa_data_sf must have a 'polygon_id' column")
 
-# Perform the efficient spatial join
-points_with_polygon <- spatial_join(points_sf, lsoa_data_sf)
+# Cleaning data
+points_with_polygon <- joined_data %>% 
+                       select_if(~ !all(is.na(.)))
 
-# Clean up and save
-stopCluster(cl)
-gc()
+# Summary of the join results
+cat("Points assigned to polygons:", sum(!is.na(points_with_polygon$matched_polygon_id)), "\n")
+cat("Points not assigned to any polygon:", sum(is.na(points_with_polygon$matched_polygon_id)), "\n")
+##CHECK!!!!!! Lots of points not assigned to any polygon!!!!
 
 # Save the resulting dbs
 saveRDS(points_with_polygon, here("Data","London", "points_with_polygon.rds"))
 saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+saveRDS(coords_db, here("Data","London", "coords_db.rds"))
 
+
+# Mapping results
 # Create a color palette for polygons
 pal <- colorFactor(palette = "viridis", domain = lsoa_data_sf$polygon_id)
 
@@ -510,11 +553,6 @@ saveWidget(map
            , selfcontained = TRUE
            , title = "London companies and LSOA Polygons"
            )
-
-# Summary of the join results
-cat("Points assigned to polygons:", sum(!is.na(points_with_polygon$matched_polygon_id)), "\n")
-cat("Points not assigned to any polygon:", sum(is.na(points_with_polygon$matched_polygon_id)), "\n")
-##CHECK!!!!!! Lots of points not assigned to any polygon!!!!
 
 #Census data https://www.nomisweb.co.uk/census/2011/bulk
 # Job density https://www.nomisweb.co.uk/datasets/jd
@@ -623,8 +661,8 @@ bdr <- areal_wombling(  lsoa_data_sf
 #                         , threshold = NA #{NA}= fuzzy wombling, {0,1}= crips wombling
 #                         ) 
 
-saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
-saveRDS(bdr, here("Data","London", "bdr_sp.rds"))
+# saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+saveRDS(bdr, here("Data","London", "bdr.rds"))
 
 # Starting point with saved data ----
 points_with_polygon <- readRDS(here("Data","London", "points_with_polygon.rds"))
@@ -634,16 +672,27 @@ bdr <- readRDS(here("Data","London", "bdr.rds"))
 bdr_sf <- st_as_sf(bdr)
 bdr_sf <- bdr_sf[!st_is_empty(bdr_sf), ] # Remove any features with empty geometries
 
+#Check bdr_sf and lsoa_data_sf have the same projection
+bdr_crs <- st_crs(bdr_sf)
+lsoa_crs <- st_crs(lsoa_data_sf)
+
+# Compare the CRS
+if (bdr_crs == lsoa_crs) {
+  print("Both objects have the same projection.")
+} else {
+  print("The objects have different projections.")
+}
+
 # Mapping ################################################
 require(grDevices)
 require(viridis)
+require(leaflet)
 
-par(mfrow = c(1, 2), mar = c(0, 0, 0, 0))
+par(mfrow = c(1, 2), mar = c(0, 0, 2, 0))
 
 # bbox <- st_bbox(bdr_sf)
 # legend_x <- bbox["xmin"] + (bbox["xmax"] - bbox["xmin"]) * 0.1  # 10% from the left
 # legend_y <- bbox["ymin"] + (bbox["ymax"] - bbox["ymin"]) * 0.9  # 90% from the bottom
-
 
 # Plot 1: Areal units with proportion African-American
 scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
@@ -652,7 +701,7 @@ plot(lsoa_data_sf[,17],
      lwd = 0.01, border = "white"
 )
 vals <- quantile(lsoa_data_sf$p_race_african_carib_black, probs = c(0, 0.25, .5, 0.75, 1), na.rm = TRUE)
-legend(-0.4180936,51.64666,
+legend("bottomleft",
        legend = c("0%", "25%", "50%", "75%", "100%"),
        fill = scale_color(vals), cex = 0.8,
        box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
@@ -667,15 +716,15 @@ plot(bdr_sf[,6]
 chi <- st_union(lsoa_data_sf)
 plot(chi, lwd = 0.8, add = TRUE)
 # Legend showing the scale of boundary values
-legend(-0.4180936,51.64666,
+legend("bottomright",
        legend = c("0.0", "0.25", "0.5", "0.75", "1.0"),
        lwd = rescale(c(0, 0.25, 0.5, 0.75, 1), to = c(0.2, 1.5)),
        cex = 0.8, box.lty = 0, border = "#00000000",
        title = "Boundary Value", title.adj = 3.5
 )
 
-# png(here("Figures","p_race_african_carib_black_blv_boundaries.png")
-#     , width = 800, height = 600)
+png(here("Figures","p_race_african_carib_black_blv_boundaries.png")
+    , width = 1600, height = 800)
 
 dev.off()
 
@@ -776,7 +825,7 @@ legend("bottomright",
        title = "Boundary Value", title.adj = 3.5)
 
 # Save the plots
-png(here("Figures", "Boundary_values_combined.png"), width = 1600, height = 600)
+png(here("Figures", "Boundary_values_combined.png"), width = 1600, height = 800)
 dev.off()
 
 # Spatial EDA ################################################
@@ -866,6 +915,13 @@ lsoa_data_sf <- lsoa_data_sf %>%
     ,edge_race_afcb  = p_race_african_carib_black_blv * p_race_bame_blv
   )
 
+saveRDS(lsoa_data_sf, here("Data","London", "lsoa_data_sf.rds"))
+
+# Saved starting point ----
+lsoa_data_sf <- readRDS(here("Data","London", "lsoa_data_sf.rds"))
+coords_db <- readRDS(here("Data","London", "coords_db.rds"))
+
+
 # Run regressions ----
 # See https://github.com/cran-task-views/Spatial/blob/main/Spatial.md
 ## Basic regression
@@ -909,6 +965,9 @@ stargazer(m2, m3
 
 ## GWR or spatially varying coefficient (SVC) models?
 # CAVEAT:collinearity tends to be problematic in GWR models, See Comber et al. 2022
+# Exploring spatial heterogeneity in data relationships
+# Justification for use of GWR:https://onlinelibrary.wiley.com/doi/10.1111/gean.12316
+# Which one?: standard GWR, a mixed GWR or a multiscale GWR
 # https://onlinelibrary.wiley.com/doi/10.1111/gean.12316
 # https://gdsl-ul.github.io/san/09-gwr.html
 
@@ -917,11 +976,23 @@ stargazer(m2, m3
 # Also fastgwr https://github.com/Ziqi-Li/FastGWR in Python
 require(spgwr)
 require(jtools)
+require(gwrr)
+
+# lsoa_data_sp <- as(lsoa_data_sf, "Spatial")
+# coords_db <- st_coordinates(lsoa_data_sf)
+
+# areal data (independent variables) we use centroids of the polygons
+
+
+# lsoa_data_sp <- lsoa_data_sp %>%
+#   as.data.frame() %>% 
+#   mutate(all_ages_pop_log = log(all_ages_pop)) %>% 
+#   {SpatialPolygonsDataFrame(lsoa_data_sp, data = .)}
 
 # specify a model equation
-eq1 <- company_count ~ edge_wombling_race +log(all_ages_pop) + p_race_white  + 
+eq1 <- company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white  + 
                p_race_mixed + p_race_asian_brit  + p_race_african_carib_black + 
-               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 +  
+               p_race_bame + lone_parent_hh + not_uk_born +  
                bad_health + working_age_pop
 
 eq2 <- company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race_wb +     
@@ -929,30 +1000,53 @@ eq2 <- company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race
                           edge_race_abb + edge_race_afcb + log(all_ages_pop) +  
                           p_race_white + p_race_mixed + p_race_asian_brit +  
                           p_race_african_carib_black + p_race_bame +  
-                          lone_parent_hh + not_uk_born + house_price_2010 +  
+                          lone_parent_hh + not_uk_born +  
                           bad_health + working_age_pop
+
+all(all.vars(eq1) %in% names(lsoa_data_sf))
 
 # Fixed Bandwidth
 # find optimal kernel bandwidth using cross validation
-lsoa_data_sp <- as(lsoa_data_sf, "Spatial")
-coords_db <- coordinates(lsoa_data_sp)
-
-fbw <- gwr.sel(eq1, 
-               data = lsoa_data_sp, 
-               coords=coords_db,
-               longlat = FALSE, # if SpatialPoints object, the value taken from the object itself
-               adapt=FALSE, 
-               gweight = gwr.Gauss, 
-               verbose = FALSE)
+fbw <- gwr.bw.est(eq2 
+               , locs  = coords_db
+               , data = lsoa_data_sf
+               , kernel = "gauss" 
+               #, cv.tol = 1e-6 # if nmissing an internally calculated value is used 
+               )
 
 # view selected bandwidth
-fbw
+plot(fbw$beta[2,], fbw$beta[3,])
+plot(coordinates(lsoa_data_sp), cex=fbw$beta[1,]/10)
+
+# Applying GWR
+fbw <- gwrr::gwr.est(eq2 
+                        , locs  = coords_db
+                        , data = lsoa_data_sf
+                        , kernel = "gauss" 
+                        , bw = fbw$phi # estimate a bandwidth for the kernel function
+                        #, cv.tol = 1e-6 # if nmissing an internally calculated value is used 
+)
+
+
+
+#collinearity diagnostic tools of variance-decomposition proportions and condition indexes
+gwrr::gwr.vdp(eq2
+        , locs = coords_db
+        , data = lsoa_data_sf
+        , phi  = fbw
+        , kernel = "gauss"
+        , sel.ci = 30 # threshold value for condition index to indicate collinearity issue
+        , sel.vdp = 0.5 # threshold value for variance-decomposition proportions to indicate collinearity issue
+        )
+hist(col.vdp$condition)
 
 # fit a gwr based on fixed bandwidth
-fb_gwr <- gwr(eq1, 
+# Gaussian function is the default. A bi-square function is recommended
+# to reduce computational time
+fb_gwr <- gwr(eq2, 
               data = lsoa_data_sp,
               coords=coords_db,
-              longlat = FALSE,
+              longlat = TRUE,  # Distance in KM if TRUE
               bandwidth = fbw, 
               gweight = gwr.Gauss,
               hatmatrix=TRUE, 
