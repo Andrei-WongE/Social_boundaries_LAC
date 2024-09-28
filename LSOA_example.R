@@ -927,7 +927,7 @@ coords_db <- readRDS(here("Data","London", "coords_db.rds"))
 ## Basic regression
 f1 <- "company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white +
                p_race_mixed + p_race_asian_brit  + p_race_african_carib_black +
-               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 + 
+               p_race_bame + lone_parent_hh + not_uk_born + 
                bad_health + working_age_pop"
 m1 <- glm.nb(f1, data = lsoa_data_sf)
 
@@ -941,7 +941,7 @@ stargazer(m1
 # Compare the composite measure to the pairwise boundary measures
 f2 <- "company_count ~ edge_wombling_race +log(all_ages_pop) + p_race_white  + 
                p_race_mixed + p_race_asian_brit  + p_race_african_carib_black + 
-               p_race_bame + lone_parent_hh + not_uk_born + house_price_2010 +  
+               p_race_bame + lone_parent_hh + not_uk_born +  
                bad_health + working_age_pop"
 
 f3 <- "company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race_wb +     
@@ -949,7 +949,7 @@ f3 <- "company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race
                           edge_race_abb + edge_race_afcb + log(all_ages_pop) +  
                           p_race_white + p_race_mixed + p_race_asian_brit +  
                           p_race_african_carib_black + p_race_bame +  
-                          lone_parent_hh + not_uk_born + house_price_2010 +  
+                          lone_parent_hh + not_uk_born +  
                           bad_health + working_age_pop"
 
 m2 <- glm.nb(f2, data = lsoa_data_sf)
@@ -983,70 +983,67 @@ require(gwrr)
 
 # areal data (independent variables) we use centroids of the polygons
 
-
-# lsoa_data_sp <- lsoa_data_sp %>%
-#   as.data.frame() %>% 
-#   mutate(all_ages_pop_log = log(all_ages_pop)) %>% 
-#   {SpatialPolygonsDataFrame(lsoa_data_sp, data = .)}
+lsoa_data_sf <- lsoa_data_sf %>%
+  mutate(all_ages_pop_log = log(all_ages_pop)) %>% 
+  mutate(working_age_pop = as.numeric(working_age_pop))
 
 # specify a model equation
-eq1 <- company_count ~ edge_wombling_race + log(all_ages_pop) + p_race_white  + 
-               p_race_mixed + p_race_asian_brit  + p_race_african_carib_black + 
-               p_race_bame + lone_parent_hh + not_uk_born +  
-               bad_health + working_age_pop
+eq1 <- company_count ~ edge_wombling_race + all_ages_pop_log + lone_parent_hh + 
+                       not_uk_born + bad_health + working_age_pop
 
 eq2 <- company_count ~ edge_race_wm + edge_race_wab + edge_race_wafc + edge_race_wb +     
                           edge_race_mab + edge_race_mafc + edge_race_wb + edge_race_abafc + 
-                          edge_race_abb + edge_race_afcb + log(all_ages_pop) +  
-                          p_race_white + p_race_mixed + p_race_asian_brit +  
-                          p_race_african_carib_black + p_race_bame +  
-                          lone_parent_hh + not_uk_born +  
-                          bad_health + working_age_pop
+                          edge_race_abb + edge_race_afcb + all_ages_pop_log +  
+                          lone_parent_hh + not_uk_born + bad_health + working_age_pop
 
-all(all.vars(eq1) %in% names(lsoa_data_sf))
+all(all.vars(eq2) %in% names(lsoa_data_sf))
+variable_classes <- sapply(all.vars(eq2), function(var) class(lsoa_data_sf[[var]]))
+print(variable_classes)
 
 # Fixed Bandwidth
 # find optimal kernel bandwidth using cross validation
-fbw <- gwr.bw.est(eq2 
+fbw <- gwr.bw.est(eq1 
                , locs  = coords_db
-               , data = lsoa_data_sf
+               , data = st_drop_geometry(lsoa_data_sf)
                , kernel = "gauss" 
                #, cv.tol = 1e-6 # if nmissing an internally calculated value is used 
                )
 
 # view selected bandwidth
-plot(fbw$beta[2,], fbw$beta[3,])
-plot(coordinates(lsoa_data_sp), cex=fbw$beta[1,]/10)
-
-# Applying GWR
-fbw <- gwrr::gwr.est(eq2 
-                        , locs  = coords_db
-                        , data = lsoa_data_sf
-                        , kernel = "gauss" 
-                        , bw = fbw$phi # estimate a bandwidth for the kernel function
-                        #, cv.tol = 1e-6 # if nmissing an internally calculated value is used 
-)
-
-
+ggplot(lsoa_data_sf) +
+  stat_sf_coordinates(aes(size = fbw$phi)) +
+  theme_minimal()
 
 #collinearity diagnostic tools of variance-decomposition proportions and condition indexes
-gwrr::gwr.vdp(eq2
+col.vdp <- gwrr::gwr.vdp(eq1
         , locs = coords_db
-        , data = lsoa_data_sf
-        , phi  = fbw
+        , data = st_drop_geometry(lsoa_data_sf)
+        , phi  = fbw$phi
         , kernel = "gauss"
         , sel.ci = 30 # threshold value for condition index to indicate collinearity issue
         , sel.vdp = 0.5 # threshold value for variance-decomposition proportions to indicate collinearity issue
         )
-hist(col.vdp$condition)
+hist(col.vdp$condition) #Issues with collinearity!!!
+
+
+
+# find optimal kernel bandwidth using cross validation
+fbw <- gwr.sel(eq1, 
+               data = utla_shp, 
+               coords=cbind( long, lat),
+               longlat = TRUE,
+               adapt=FALSE, 
+               gweight = gwr.Gauss, 
+               verbose = FALSE)
+
+# view selected bandwidth
+fbw
 
 # fit a gwr based on fixed bandwidth
-# Gaussian function is the default. A bi-square function is recommended
-# to reduce computational time
-fb_gwr <- gwr(eq2, 
-              data = lsoa_data_sp,
-              coords=coords_db,
-              longlat = TRUE,  # Distance in KM if TRUE
+fb_gwr <- gwr(eq1, 
+              data = utla_shp,
+              coords=cbind( long, lat),
+              longlat = TRUE,
               bandwidth = fbw, 
               gweight = gwr.Gauss,
               hatmatrix=TRUE, 
@@ -1059,9 +1056,10 @@ fb_gwr_out <- as.data.frame(fb_gwr$SDF)
 
 utla_shp$fmb_localR2 <- fb_gwr_out$localR2
 
-# mapping results
+# map
 # Local R2
-map_fbgwr1 = tm_shape(lsoa_data_sp) +
+legend_title = expression("Fixed: Local R2")
+map_fbgwr1 = tm_shape(utla_shp) +
   tm_fill(col = "fmb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
   tm_borders(col = "white", lwd = .1)  + # add borders
   tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
@@ -1069,22 +1067,31 @@ map_fbgwr1 = tm_shape(lsoa_data_sp) +
   tm_layout(bg.color = "white") # change background colour
 map_fbgwr1 + tm_shape(reg_shp) + # add region boundaries
   tm_borders(col = "white", lwd = .5) # add borders
-legend_title = expression("Fixed: Local R2")
 
-# Adaptive bandwidth
+
+## Adaptive bandwith
 # find optimal kernel bandwidth using cross validation
 abw <- gwr.sel(eq1, 
-               data = lsoa_data_sp, 
-               coords=coords_db,
+               data = utla_shp, 
+               coords=cbind( long, lat),
                longlat = TRUE,
                adapt = TRUE, 
                gweight = gwr.Gauss, 
                verbose = FALSE)
 
-# view selected bandwidth
-abw
+# fit a gwr based on adaptive bandwidth
+ab_gwr <- gwr(eq1, 
+              data = utla_shp,
+              coords=cbind( long, lat),
+              longlat = TRUE,
+              adapt = abw, 
+              gweight = gwr.Gauss,
+              hatmatrix=TRUE, 
+              se.fit=TRUE)
 
-# Assessing model fit
+ab_gwr
+
+## Model fit
 # write gwr output into a data frame
 ab_gwr_out <- as.data.frame(ab_gwr$SDF)
 
@@ -1092,9 +1099,10 @@ utla_shp$amb_ethnic <- ab_gwr_out$ethnic
 utla_shp$amb_lt_illness <- ab_gwr_out$lt_illness
 utla_shp$amb_localR2 <- ab_gwr_out$localR2
 
-# Mapping results
+# map
 # Local R2
-map_abgwr1 = tm_shape(lsoa_data_sp) +
+legend_title = expression("Adaptive: Local R2")
+map_abgwr1 = tm_shape(utla_shp) +
   tm_fill(col = "amb_localR2", title = legend_title, palette = magma(256), style = "cont") + # add fill
   tm_borders(col = "white", lwd = .1)  + # add borders
   tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
@@ -1102,9 +1110,30 @@ map_abgwr1 = tm_shape(lsoa_data_sp) +
   tm_layout(bg.color = "white") # change background colour
 map_abgwr1 + tm_shape(reg_shp) + # add region boundaries
   tm_borders(col = "white", lwd = .5) # add borders
-legend_title = expression("Adaptive: Local R2")
 
-## SGWR
+# Statistical significance
+# compute t statistic
+utla_shp$t_ethnic = ab_gwr_out$ethnic / ab_gwr_out$ethnic_se
+
+# categorise t values
+utla_shp$t_ethnic_cat <- cut(utla_shp$t_ethnic,
+                             breaks=c(min(utla_shp$t_ethnic), -2, 2, max(utla_shp$t_ethnic)),
+                             labels=c("sig","nonsig", "sig"))
+
+# map statistically significant coefs for ethnic
+legend_title = expression("Ethnic: significant")
+map_sig = tm_shape(utla_shp) + 
+  tm_fill(col = "t_ethnic_cat", title = legend_title, legend.hist = TRUE, midpoint = NA, textNA = "", colorNA = "white") +  # add fill
+  tm_borders(col = "white", lwd = .1)  + # add borders
+  tm_compass(type = "arrow", position = c("right", "top") , size = 5) + # add compass
+  tm_scale_bar(breaks = c(0,1,2), text.size = 0.7, position =  c("center", "bottom")) + # add scale bar
+  tm_layout(bg.color = "white", legend.outside = TRUE) # change background colour & place legend outside
+
+map_sig + tm_shape(reg_shp) + # add region boundaries
+  tm_borders(col = "white", lwd = .5) # add borders
+
+# view selected bandwidth
+abw## SGWR
 # See: https://github.com/Lessani252/SGWR
 # system("conda activate your-env-name && python -m sgwr run -np 8 -datasystem("conda activate your-env-name && python -m sgwr run -np 4 -data C:/path/to/your/data")")
 
