@@ -830,12 +830,17 @@ dev.off()
 
 # Spatial EDA ################################################
 #"r pkg("sfdep")" "Python pkg("PySal")"
+require(reticulate)
+
+sfdep <- import("pysal")
 
 # Spatial autocorrelation
 
 
 # Spatial heterogeneity
 
+
+# Demostrate the existence of spatial effects
 
 
 # Spatial regression ################################################
