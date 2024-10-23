@@ -135,45 +135,80 @@ plot(st_geometry(lsoa_data_sf))
 
 # Leaving relevant variables
 lsoa_data_sf <- lsoa_data_sf %>% 
-  dplyr::select(  "LSOA11CD"
-                , "POPDEN"
-                , "names"
-                , "mid_year_population_estimates_all_ages_2011"
-                , "mid_year_population_estimates_aged_16_29_2011"
-                , "mid_year_population_estimates_aged_30_44_2011"
-                , "mid_year_population_estimates_aged_45_64_2011"
-                , "mid_year_population_estimates_aged_65_2011"
-                , "mid_year_population_estimates_working_age_2011"
-                , "x2011_census_population_age_structure_all_ages"
-                , "household_composition_couple_household_without_dependent_children_2011"
-                , "household_composition_lone_parent_household_2011"
-                , "country_of_birth_percent_not_united_kingdom_2011"
-                , "ethnic_group_white_percent_2011"  
-                , "ethnic_group_mixed_multiple_ethnic_groups_percent_2011"                                                                
-                , "ethnic_group_asian_asian_british_percent_2011"                                                                         
-                , "ethnic_group_black_african_caribbean_black_british_percent_2011"                                                       
-                , "ethnic_group_other_ethnic_group_percent_2011"                                                                          
-                , "ethnic_group_bame_percent_2011" 
-                , "household_language_percent_of_households_where_no_people_aged_16_or_over_have_english_as_a_main_language_2011"
-                , "tenure_private_rented_percent_2011"
-                , "tenure_social_rented_percent_2011"
-                , "tenure_owned_with_a_mortgage_or_loan_percent_2011"
-                , "house_prices_median_price_2010"
-                , "house_prices_median_price_2011"
-                , "house_prices_median_price_2012"
-                , "adults_in_employment_percent_of_households_with_no_adults_in_employment_with_dependent_children_2011"
-                , "economic_activity_economically_active_total_2011"                                                                      
-                , "economic_activity_economically_inactive_total_2011"                                                                    
-                , "economic_activity_economically_active_employee_2011"                                                                   
-                , "economic_activity_economically_active_self_employed_2011"                                                              
-                , "economic_activity_economically_active_unemployed_2011"                                                                 
-                , "economic_activity_economically_active_full_time_student_2011"
-                , "economic_activity_unemployment_rate_2011"
-                , "qualifications_percent_no_qualifications_2011"
-                , "health_bad_or_very_bad_health_percent_2011"
-                , "car_or_van_availability_no_cars_or_vans_in_household_percent_2011"
-              )
-
+  dplyr::select("LSOA11CD",
+                  "POPDEN",
+                  "HHOLDRES",
+                  "names",
+                  "mid_year_population_estimates_all_ages_2011",
+                  "mid_year_population_estimates_aged_0_15_2011",
+                  "mid_year_population_estimates_aged_16_29_2010",
+                  "mid_year_population_estimates_aged_16_29_2011",
+                  "mid_year_population_estimates_aged_30_44_2011",
+                  "mid_year_population_estimates_aged_45_64_2011",
+                  "mid_year_population_estimates_aged_65_2011",
+                  "mid_year_population_estimates_working_age_2011",
+                  "x2011_census_population_age_structure_all_ages",
+                  "households_all_households_2011",
+                  "household_composition_percent_couple_household_with_dependent_children_2011",
+                  "household_composition_percent_lone_parent_household_2011",
+                  "ethnic_group_white_percent_2011",
+                  "ethnic_group_mixed_multiple_ethnic_groups_percent_2011",
+                  "ethnic_group_asian_asian_british_percent_2011",
+                  "ethnic_group_black_african_caribbean_black_british_percent_2011",
+                  "ethnic_group_other_ethnic_group_percent_2011",
+                  "ethnic_group_bame_percent_2011",
+                  "country_of_birth_percent_not_united_kingdom_2011",
+                  "household_language_percent_of_households_with_at_least_one_person_aged_16_or_over_with_english_as_a_main_language_2011",
+                  "tenure_owned_with_a_mortgage_or_loan_percent_2011",
+                  "tenure_social_rented_percent_2011",
+                  "tenure_private_rented_percent_2011",
+                  "dwelling_type_household_spaces_with_at_least_one_usual_resident_percent_2011",
+                  "dwelling_type_household_spaces_with_no_usual_residents_percent_2011",
+                  "dwelling_type_whole_house_or_bungalow_detached_percent_2011",
+                  "dwelling_type_whole_house_or_bungalow_semi_detached_percent_2011",
+                  "dwelling_type_whole_house_or_bungalow_terraced_including_end_terrace_percent_2011",
+                  "dwelling_type_flat_maisonette_or_apartment_percent_2011",
+                  "house_prices_median_price_2009",
+                  "house_prices_median_price_2010",
+                  "house_prices_median_price_2011",
+                  "house_prices_median_price_2012",
+                  "house_prices_median_price_2013",
+                  "house_prices_median_price_2014",
+                  "house_prices_sales_2009",
+                  "house_prices_sales_2010",
+                  "house_prices_sales_2011",
+                  "house_prices_sales_2012",
+                  "house_prices_sales_2013",
+                  "house_prices_sales_2014",
+                  "economic_activity_economically_active_total_2011",
+                  "economic_activity_economically_inactive_total_2011",
+                  "economic_activity_economically_active_employee_2011",
+                  "economic_activity_economically_active_self_employed_2011",
+                  "economic_activity_economically_active_unemployed_2011",
+                  "economic_activity_economically_active_full_time_student_2011",
+                  "economic_activity_employment_rate_2011",
+                  "economic_activity_unemployment_rate_2011",
+                  "qualifications_percent_no_qualifications_2011",
+                  "qualifications_percent_highest_level_of_qualification_level_1_qualifications_2011",
+                  "qualifications_percent_highest_level_of_qualification_level_2_qualifications_2011",
+                  "qualifications_percent_highest_level_of_qualification_apprenticeship_2011",
+                  "qualifications_percent_highest_level_of_qualification_level_3_qualifications_2011",
+                  "qualifications_percent_highest_level_of_qualification_level_4_qualifications_and_above_2011",
+                  "qualifications_percent_highest_level_of_qualification_other_qualifications_2011",
+                  "qualifications_percent_schoolchildren_and_full_time_students_age_18_and_over_2011",
+                  "health_day_to_day_activities_limited_a_lot_percent_2011",
+                  "health_day_to_day_activities_limited_a_little_percent_2011",
+                  "health_day_to_day_activities_not_limited_percent_2011",
+                  "health_very_good_or_good_health_percent_2011",
+                  "health_fair_health_percent_2011",
+                  "health_bad_or_very_bad_health_percent_2011",
+                  "public_transport_accessibility_levels_2014_percent_0_1_poor_access",
+                  "public_transport_accessibility_levels_2014_percent_2_3_average_access",
+                  "public_transport_accessibility_levels_2014_percent_4_6_good_access",
+                  "household_income_2011_12_median_annual_household_income_estimate",
+                  "geometry"
+                )
+    
 # Adding other sources of data, check NOMIS
 dir(here("Data", "London"), pattern = ".csv")
 # [1] "employment_pop.csv"             
@@ -687,14 +722,20 @@ if (bdr_crs == lsoa_crs) {
 require(grDevices)
 require(viridis)
 require(leaflet)
+require(scales)
 
-par(mfrow = c(1, 2), mar = c(0, 0, 2, 0))
+# par(mfrow = c(1, 2), mar = c(4, 4, 4, 4))
 
 # bbox <- st_bbox(bdr_sf)
 # legend_x <- bbox["xmin"] + (bbox["xmax"] - bbox["xmin"]) * 0.1  # 10% from the left
 # legend_y <- bbox["ymin"] + (bbox["ymax"] - bbox["ymin"]) * 0.9  # 90% from the bottom
 
 # Plot 1: Areal units with proportion African-American
+png(here("Figures", "p_race_african_carib_black_areal.png"),
+    width = 800, height = 800)
+
+par(mar = c(4, 4, 4, 4))
+
 scale_color <- col_numeric(c("#F1EEF6", "#034E7B"), domain = c(0, 1))
 plot(lsoa_data_sf[,17],
      col = scale_color(lsoa_data_sf$p_race_african_carib_black),
@@ -706,10 +747,15 @@ legend("bottomleft",
        fill = scale_color(vals), cex = 0.8,
        box.lty = 0, border = "#00000000", title = "Percent Black", title.adj = 3.5
 )
-# png(here("Figures","p_race_african_carib_black_blv_areal.png")
-#     , width = 800, height = 600)
+
+dev.off()
 
 # Plot 2: Boundaries
+png(here("Figures", "p_race_african_carib_black_blv_boundaries.png"),
+    width = 800, height = 800)
+
+par(mar = c(4, 4, 4, 4))
+
 plot(bdr_sf[,6]
      , lwd = rescale(bdr_sf$p_race_african_carib_black_blv, to = c(0.1, 1.5)))
 # The spatial lines object does not include city boundaries. Let's add them
@@ -722,9 +768,6 @@ legend("bottomright",
        cex = 0.8, box.lty = 0, border = "#00000000",
        title = "Boundary Value", title.adj = 3.5
 )
-
-png(here("Figures","p_race_african_carib_black_blv_boundaries.png")
-    , width = 1600, height = 800)
 
 dev.off()
 
@@ -791,10 +834,13 @@ lsoa_data_sf <- bind_cols(lsoa_data_sf
   # 
 
 # Set up the plotting area
-par(mfrow = c(1, 2), mar = c(0, 0, 2, 0))
 
 # Plot 1: Boundary values for border line segments
 print(summary(bdr_sf$p_race_african_carib_black_blv))
+
+png(here("Figures", "Boundary_values_combined.png"), 
+    width = 1600, height = 800)
+par(mar = c(4, 4, 4, 4))
 
 plot(st_geometry(bdr_sf),
      lwd = rescale(bdr_sf$p_race_african_carib_black_blv, to = c(0.1, 1.25)),
@@ -809,7 +855,13 @@ legend("bottomright",
        cex = 0.8, box.lty = 0, border = "#00000000",
        title = "Boundary Value", title.adj = 3.5)
 
+dev.off()
+
 # Plot 2: Boundary values for border line segments for areal units
+png(here("Figures", "Boundary_values_areal_units.png"), 
+    width = 1600, height = 800)
+par(mar = c(4, 4, 4, 4))
+
 sel <- is.finite(lsoa_data_sf$p_race_african_carib_black_blv)
 scale_color <- colorNumeric(viridis(100), domain = c(0, 1))
 cols <- scale_color(lsoa_data_sf$p_race_african_carib_black_blv[sel])
@@ -824,8 +876,6 @@ legend("bottomright",
        cex = 0.8, box.lty = 0, border = "#00000000",
        title = "Boundary Value", title.adj = 3.5)
 
-# Save the plots
-png(here("Figures", "Boundary_values_combined.png"), width = 1600, height = 800)
 dev.off()
 
 # Spatial EDA ################################################
@@ -869,6 +919,8 @@ old_names2 <- c("mid_year_population_estimates_working_age_2011"
                , "qualifications_percent_no_qualifications_2011"
                , "health_bad_or_very_bad_health_percent_2011"
               )
+
+
 
 lsoa_data_sf <- lsoa_data_sf %>% 
   dplyr::rename_with(~ new_names2, all_of(old_names2))
